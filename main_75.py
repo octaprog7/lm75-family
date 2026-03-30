@@ -8,6 +8,8 @@ from micropython import const
 from machine import I2C, Pin
 from lm75mod import TMP75, LM75AB, LM75LikeBase
 import time
+from sensor_pack_2.comp_interface import CompMode
+
 
 strOK = const("OK")
 strWarn = const("ПРЕДУПР.")
@@ -137,16 +139,17 @@ def test_comparator_modes(ts: LM75LikeBase) -> bool:
         print_status("Текущий режим", mode_name)
 
         print("  -> Переключение в Interrupt mode...")
-        ts.set_comp_mode(mode=1, active_alarm_level=False)
+        ts.set_comp_mode(mode=CompMode.INTERRUPT, active_alarm_level=False)
         new_mode: int = ts.set_comp_mode(mode=None)
-        result: str = strOK if new_mode == 1 else strWarn
+        result: str = strOK if new_mode == CompMode.INTERRUPT else strWarn
         print_status("Новый режим", "Interrupt" if new_mode else "Comparator", result)
 
         print("  -> Переключение в Comparator mode...")
-        ts.set_comp_mode(mode=0, active_alarm_level=False)
+        ts.set_comp_mode(mode=CompMode.COMPARATOR, active_alarm_level=False)
         final_mode: int = ts.set_comp_mode(mode=None)
-        result: str = strOK if final_mode == 0 else strWarn
-        print_status("Финальный режим", "Comparator" if final_mode == 0 else "Interrupt", result)
+        result: str = strOK if final_mode == CompMode.COMPARATOR else strWarn
+        print_status("Финальный режим",
+                     "Comparator" if final_mode == CompMode.COMPARATOR else "Interrupt", result)
         return True
     except Exception as e:
         print_status("Ошибка", str(e), strFail)
@@ -342,8 +345,8 @@ def main() -> None:
         sensor_class_name = str(ts.__qualname__)
         print_status(label="Датчик", value=f"{sensor_class_name} @ 0x{SENSOR_ADDR:02X}")
     except Exception as e:
-        print(f"Ошибка инициализации датчика: {sensor_class_name}")
-        print("Проверьте: подключение, адрес, питание 3.3В")
+        print(f"Ошибка инициализации датчика: {e}")
+        print("Проверьте: подключение, адрес, подтяжки 4.7kΩ, питание 3.3В")
         return
 
     print_header(title=f"Набор проверок 'драйвера' датчика {sensor_class_name}", char="#")
