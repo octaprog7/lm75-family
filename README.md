@@ -31,7 +31,7 @@ Then open main_75.py in your IDE and run it.
 * [TMP75CQ](/test_result/tmp75cq.txt)
 
 # Class hierarchy
-
+```
 LM75LikeBase (base class)
 ├── LM75
 │   ├── LM75AB (high accuracy: 0.125 C)
@@ -39,7 +39,7 @@ LM75LikeBase (base class)
 └── TMP75
     ├── TMP175 (alias)
     └── TMP275 (alias)
-
+```
 ## Class and sensor mapping (lm75mod.py)
 | Class  | Supported sensors     | Resolution (LSB) | Accuracy (typ.) | Range        | ONE_SHOT |
 |--------|-----------------------|------------------|-----------------|--------------|----------|
