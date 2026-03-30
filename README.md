@@ -43,12 +43,12 @@ LM75LikeBase (base class)
 ## Class and sensor mapping (lm75mod.py)
 | Class  | Supported sensors     | Resolution (LSB) | Accuracy (typ.) | Range        | ONE_SHOT |
 |--------|-----------------------|------------------|-----------------|--------------|----------|
-| LM75   | LM75, LM75C, LM75D    | 0.5 C            | +/-2.0 C        | -55...+125 C | Нет      |
-| LM75AB | LM75A, LM75B          | 0.125 C          | +/-0.5 C        | -55...+125 C | Нет      |
-| LM75CD | LM75, LM75C, LM75D    | 0.5 C            | +/-2.0 C        | -55...+125 C | Нет      |
-| TMP75  | TMP75, TMP175, TMP275 | 0.0625 C         | +/-0.25 C       | -40...+125 C | Нет      |
-| TMP175 | TMP175 (alias TMP75)  | 0.0625 C         | +/-0.25 C       | -40...+125 C | Нет      |
-| TMP275 | TMP275 (alias TMP75)  | 0.0625 C         | +/-0.25 C       | -40...+125 C | Нет      |
+| LM75   | LM75, LM75C, LM75D    | 0.5 C            | +/-2.0 C        | -55...+125 C | No       |
+| LM75AB | LM75A, LM75B          | 0.125 C          | +/-0.5 C        | -55...+125 C | No       |
+| LM75CD | LM75, LM75C, LM75D    | 0.5 C            | +/-2.0 C        | -55...+125 C | No       |
+| TMP75  | TMP75, TMP175, TMP275 | 0.0625 C         | +/-0.25 C       | -40...+125 C | No       |
+| TMP175 | TMP175 (alias TMP75)  | 0.0625 C         | +/-0.25 C       | -40...+125 C | No       |
+| TMP275 | TMP275 (alias TMP75)  | 0.0625 C         | +/-0.25 C       | -40...+125 C | No       |
 
 # License
 MIT license
