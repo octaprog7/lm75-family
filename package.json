@@ -1,0 +1,13 @@
+{
+  "name": "lm75-family",
+  "version": "1.0.0",
+  "urls": [
+    ["lm75mod.py", "github:octaprog7/LM75/lm75mod.py"],
+    ["sensor_pack_2/__init__.py", "github:octaprog7/LM75/sensor_pack_2/__init__.py"],
+    ["sensor_pack_2/base_sensor.py", "github:octaprog7/LM75/sensor_pack_2/base_sensor.py"],
+    ["sensor_pack_2/bitfield.py", "github:octaprog7/LM75/sensor_pack_2/bitfield.py"],
+    ["sensor_pack_2/bus_service.py", "github:octaprog7/LM75/sensor_pack_2/bus_service.py"],
+    ["sensor_pack_2/comp_interface.py", "github:octaprog7/LM75/sensor_pack_2/comp_interface.py"]
+  ],
+  "deps": []
+}
