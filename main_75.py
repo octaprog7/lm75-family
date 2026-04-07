@@ -6,9 +6,9 @@ from collections import namedtuple
 from sensor_pack_2.bus_service import I2cAdapter
 from micropython import const
 from machine import I2C, Pin
-from lm75mod import TMP75, LM75AB, LM75LikeBase
-import time
+from lm75mod import TMP75, LM75A, LM75LikeBase, LM75
 from sensor_pack_2.comp_interface import CompMode
+import time
 
 
 strOK = const("OK")
@@ -18,6 +18,8 @@ strShutDown = const("SHUTDOWN")
 strActive = const("ACTIVE")
 strPassed = const("ПРОЙДЕН")
 strNotPassed = const("НЕ ПРОЙДЕН")
+# Аппаратное ограничение
+strHwLimit = const("Отсутствует аппаратная возможность!")
 
 # =============================================================================
 # НАСТРОЙКИ
@@ -60,7 +62,7 @@ def calc_stats(values: list[float]) -> Statistic | None:
         values: Список измерений температуры (float).
 
     Returns:
-        dict | None: Словарь со статистикой или None если список пуст.
+        Statistic | None: Именованный кортеж со статистикой...
     """
     if not values:
         return None
@@ -187,13 +189,13 @@ def test_shutdown_mode(ts: LM75LikeBase) -> bool:
         return False
 
 
-def test_shutdown_one_shot(ts: LM75LikeBase) -> bool:
+def test_shutdown_one_shot(ts: LM75LikeBase) -> bool | None:
     """Тест 8: Выключение с однократным измерением (если поддерживается)."""
     print_header("ТЕСТ 8: Выключение с ONE_SHOT", "-")
     try:
         if not ts.is_one_shot_supported():
-            print_status("Поддержка ONE_SHOT", "Не поддерживается данным датчиком", strWarn)
-            return True  # Не ошибка, просто особенность датчика
+            print_status("Поддержка ONE_SHOT", "Аппаратно отсутствует!", strHwLimit)
+            return None  # ← Тест НЕ пройден
 
         print("  -> Выключение с однократным измерением...")
         ts.shutdown(one_shot=True)
@@ -225,7 +227,7 @@ def test_statistics(ts, count=20):
     try:
         values: list[float] = []
         cct: int = ts.get_conversion_cycle_time()
-        wait_time: int = max(cct, 100)
+        wait_time: int = cct + 50  # Запас 50мс
 
         # Получаем LSB датчика для оценки стабильности
         lsb: float = ts.get_current_lsb()
@@ -234,6 +236,10 @@ def test_statistics(ts, count=20):
 
         for i in range(count):
             temp: float = ts.get_measurement_value()
+            raw_bytes = ts._connection.read_reg(ts.ADDR_TEMPERATURE, 2)
+            # Раскомментируй для отладки:
+            # print(f"DBG:    [{i+1:2d}] RAW: {raw_bytes.hex()} | {temp:.3f} C")
+            #
             values.append(temp)
             if i % 5 == 0:
                 print("    [{:2d}] {:.3f} C".format(i + 1, temp))
@@ -316,12 +322,45 @@ def test_error_handling(ts: LM75LikeBase) -> bool:
         return True
 
 
+def test_resolution_change(ts: TMP75) -> bool | None:
+    """Смена разрешения АЦП (для TMP75 и для новых LM75A, B, C, D...)."""
+    if not hasattr(ts, 'set_resolution'):
+        print_status("Изменение разрешения", "Аппаратно отсутствует!", strHwLimit)
+        return None  # ← Тест НЕ пройден
+
+    print_header("ТЕСТ 9: Смена разрешения", "-")
+    try:
+        # Читаем текущее
+        current = ts.set_resolution()
+        print_status("Текущий код разрешения", current)
+
+        # Устанавливаем 9 бит (код 0)
+        ts.set_resolution(0)
+        time.sleep_ms(50)
+        assert ts.set_resolution() == 0, "Не применилось 9 бит"
+        assert ts.get_current_lsb() == 0.5, "LSB не изменился"
+
+        # Устанавливаем 12 бит (код 3)
+        ts.set_resolution(3)
+        time.sleep_ms(250)  # Ждём более долгую конвертацию
+        assert ts.set_resolution() == 3, "Не применилось 12 бит"
+        assert ts.get_current_lsb() == 0.0625, "LSB не изменился"
+
+        # Возвращаем исходное
+        ts.set_resolution(current)
+        print_status("Разрешение", "Переключено успешно")
+        return True
+    except Exception as e:
+        print_status("Ошибка", str(e), strFail)
+        return False
+
+
 # =============================================================================
 # ОСНОВНАЯ ПРОГРАММА
 # =============================================================================
 def main() -> None:
     """Запуск всех тестов."""
-    sensor_class_name = None
+    # sensor_class_name = None
     # Инициализация I2C
     print("")
     print("Инициализация I2C...")
@@ -339,11 +378,14 @@ def main() -> None:
     print("Поиск датчика...")
     try:
         # подставляйте вызов конструктора любого класса, унаследованного от LM75LikeBase
-        #ts = LM75AB(adapter=adapter, address=SENSOR_ADDR)
-        ts = TMP75(adapter=adapter, address=SENSOR_ADDR)
+        # ts = LM75(adapter=adapter, address=SENSOR_ADDR)   # доисторический датчик!
+        # ts = LM75A(adapter=adapter, address=SENSOR_ADDR)  # современный датчик LM75XX
+        ts = TMP75(adapter=adapter, address=SENSOR_ADDR)    # современный датчик TMP75XX
         # название датчика это имя класса
         sensor_class_name = str(ts.__qualname__)
         print_status(label="Датчик", value=f"{sensor_class_name} @ 0x{SENSOR_ADDR:02X}")
+        if isinstance(ts, TMP75):
+            ts.set_resolution(code=0x03)
     except Exception as e:
         print(f"Ошибка инициализации датчика: {e}")
         print("Проверьте: подключение, адрес, подтяжки 4.7kΩ, питание 3.3В")
@@ -357,10 +399,11 @@ def main() -> None:
         ("Пороги компаратора", test_thresholds),
         ("Режимы компаратора", test_comparator_modes),
         ("Режим SHUTDOWN", test_shutdown_mode),
-        ("Статистика", lambda t: test_statistics(t, TEST_ITERATIONS)),
-        ("Итератор", lambda t: test_iterator(t, 10)),
+        ("Статистика", lambda sensor: test_statistics(sensor, TEST_ITERATIONS)),
+        ("Итератор", lambda sensor: test_iterator(sensor, 10)),
         ("Обработка ошибок", test_error_handling),
-        ("Выключение с ONE_SHOT", lambda t: test_shutdown_one_shot(t)),  # если поддерживается
+        ("Выключение с ONE_SHOT", lambda sensor: test_shutdown_one_shot(sensor)),
+        ("Изменение разрешения", lambda sensor: test_resolution_change(sensor)),
     ]
 
     results: list[tuple[str, bool]] = []
@@ -375,30 +418,35 @@ def main() -> None:
 
     # Итоговый отчёт
     print_header("ИТОГОВЫЙ ОТЧЁТ", "#")
-    passed: int = 0
-    for _, r in results:
-        if r:
-            passed += 1
-    total: int = len(results)
+    passed     = sum(1 for _, r in results if r is True)
+    hw_limited = sum(1 for _, r in results if r is None)
+    failed     = sum(1 for _, r in results if r is False)
+    total      = len(results)
 
     for name, result in results:
-        symbol: str = f"[{strPassed}]" if result else f"[{strNotPassed}]"
+        if result is True:
+            symbol = f"[{strPassed}]"
+        elif result is None:
+            symbol = f"[{strHwLimit}]"
+        else:
+            symbol = f"[{strNotPassed}]"
         print("  " + symbol + " " + name)
 
     print("")
-    print("Результат: {}/{} тестов пройдено".format(passed, total))
+    print("Результат: {}/{} пройдено, {} аппаратно ограничено, {} сбоев".format(passed, total, hw_limited, failed))
 
-    if passed == total:
-        print("Все тесты успешны!")
-    elif passed >= total * 0.8:
-        print("Большинство тестов пройдено. Проверьте предупреждения выше.")
+    if failed == 0:
+        if hw_limited > 0:
+            print("Все поддерживаемые функции работают корректно. Аппаратные ограничения учтены.")
+        else:
+            print("Все тесты успешны!")
     else:
         print("Много ошибок. Проверьте подключение и конфигурацию.")
 
     print("")
     print("Финальная температура: {:.3f} C".format(ts.get_measurement_value()))
     print("")
-    print("#" * 60)
+    print(60 * "#")
 
 
 # =============================================================================

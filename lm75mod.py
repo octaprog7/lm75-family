@@ -1,5 +1,12 @@
 # MIT license
 
+# Иерархия
+# LM75LikeBase          # Абстрактный контракт, I2C, probing, пороги
+#    ├─ LM75            # Legacy: 9 бит фикс, 100 мс конвертация
+#    └─ TMP75           # Modern: 9-12 бит динамически, One-Shot, 28-224 мс
+#         ├─ TMP175, TMP275, TMP75A/B/C  # Пустые псевдонимы
+#         └─ LM75A/B/C/D                 # Пустые псевдонимы
+
 from micropython import const
 from sensor_pack_2.bus_service import I2cAdapter
 from sensor_pack_2.base_sensor import DeviceEx, IBaseSensorEx, Iterator, check_value, check_value_ex
@@ -27,7 +34,10 @@ class LM75LikeBase(IBaseSensorEx, ICompInterface, Iterator):
     BF_NAME_COMP_MODE = const("COMP_MODE")
     BF_NAME_OS_POLARITY = const("OS_POLARITY")
     BF_NAME_FAULT_QUEUE = const("FAULT_QUEUE")
-    BF_NAME_ONE_SHOT = const("ONE_SHOT")  # имя поля режима однократного измерения
+    # разрядность преобразователя
+    BF_NAME_CONV_RESOL = const("CONV_RESOL")
+    # имя поля режима однократного измерения
+    BF_NAME_ONE_SHOT = const("ONE_SHOT")
 
     # ИНВЕРСИЯ ЗНАЧЕНИЙ РЕЖИМА КОМПАРАТОРА
     # Разные производители используют противоположные значения битов в регистре
@@ -110,6 +120,37 @@ class LM75LikeBase(IBaseSensorEx, ICompInterface, Iterator):
         self._config_fields = None  # BitFields(fields_info=_config_reg)
         # Флаг поддержки режима ONE_SHOT (устанавливается автоматически)
         self._one_shot_mode_support: bool = False
+        # Истина, если датчик поддерживает изменение разрешения
+        self._resol_changeable: bool = False
+
+    def _probe_hardware_capabilities(self) -> None:
+        """
+        Аппаратно определяет возможности датчика методом Write-Read-Compare.
+        Проверяет, записываются ли биты разрешения R1/R0 (биты 5-6).
+        """
+        conn = self._connection
+        addr = self.ADDR_CONFIG  # 0x01
+
+        # 1. Читаем текущее состояние (bytes[0] → int)
+        original_cfg = conn.read_reg(addr, 1)[0]
+
+        try:
+            # 2. Тест: устанавливаем биты R1/R0 в 1 (код 3 → 12 бит)
+            test_cfg = original_cfg | 0x60
+            conn.write_reg(addr, test_cfg, 1)
+
+            # 3. Читаем обратно и проверяем
+            verify_cfg = conn.read_reg(addr, 1)[0]
+            res_bits = (verify_cfg >> 5) & 0x03
+            self._resol_changeable = (res_bits == 0x03)
+
+            if self._resol_changeable:
+                self._one_shot_mode_support = True
+
+        finally:
+            # Восстанавливаю исходное состояние
+            conn.write_reg(addr, original_cfg, 1)
+            self.refresh_config_cache()
 
     def get_typical_accuracy(self) -> float:
         """Возвращает типичную погрешность датчика (°C).
@@ -121,10 +162,21 @@ class LM75LikeBase(IBaseSensorEx, ICompInterface, Iterator):
         Вызывать только после выполнения кода метода _init_one_shot_support!"""
         return self._one_shot_mode_support
 
+    def is_changeable_resol(self) -> bool:
+        """Возвращает True, если датчик поддерживает программное изменение разрешения АЦП."""
+        return self._resol_changeable
+
+    def _is_field_exist(self, field_name: str) -> bool:
+        """Проверяет наличие битового поля в конфигурации."""
+        return self._config_fields is not None and field_name in self._config_fields
+
     def _init_one_shot_support(self) -> None:
         """Проверяет наличие поля ONE_SHOT через и устанавливает флаг."""
-        self._one_shot_mode_support = (self._config_fields is not None and
-                                       self.BF_NAME_ONE_SHOT in self._config_fields)
+        self._one_shot_mode_support = self._is_field_exist(self.BF_NAME_ONE_SHOT)
+
+    def _init_resolution_support(self) -> None:
+        """Проверяет наличие поля CONV_RESOL в конфигурации и устанавливает флаг."""
+        self._resol_changeable = self._is_field_exist(self.BF_NAME_CONV_RESOL)
 
     def get_reg_val(self, addr: int, bytes_count: int = 1, signed: bool = False) -> int:
         """Возвращает значение из регистра:
@@ -370,7 +422,7 @@ class LM75LikeBase(IBaseSensorEx, ICompInterface, Iterator):
         self.set_config_field(value=raw_cfg)
         return raw_cfg
 
-    def is_shutdown(self, read_from_cache: bool = True) -> bool:
+    def is_shutdown(self, read_from_cache: bool = False) -> bool:
         """Возвращает True, если датчик в режиме малого энергопотребления.
         Если read_from_cache Истина, то читает из кэша, иначе из датчика (после кеширования)."""
         return self.get_config_field(self.BF_NAME_SHUTDOWN, read_from_cache=read_from_cache)
@@ -479,15 +531,17 @@ class LM75LikeBase(IBaseSensorEx, ICompInterface, Iterator):
 
 
 class LM75(LM75LikeBase):
-    """Программное представление датчика LM75x.
-    Разрешение температуры у датчиков LM75A, LM75B, LM75C и LM75D отличается!
-    LM75, LM75C, LM75D имеют разрешение 0.5 гр. Цельсия.
-    LM75A, LM75B имеют разрешение 0.125 гр. Цельсия."""
+    """Программное представление оригинального LM75 (Legacy).
+    Фиксированное разрешение 9 бит (0.5°C), без поддержки One-Shot.
+    Для современных LM75A/B/C/D используйте классы-псевдонимы, наследующиеся от TMP75.
+    """
 
     def __init__(self, adapter: I2cAdapter, address: int):
         super().__init__(adapter, address)
         self._config_fields = BitFields(LM75LikeBase.config_reg_LM75)
         self._init_one_shot_support()
+        self._init_resolution_support()
+        self._probe_hardware_capabilities()
 
     def get_typical_accuracy(self) -> float:
         """Возвращает типичную погрешность датчика (°C)."""
@@ -501,18 +555,15 @@ class LM75(LM75LikeBase):
         """Преобразует температуру (source) из градусов Цельсия в сырое значение, для датчика.
         Если threshold Истина, то используется LSB для пороговых значений температуры,
         иначе используется LSB для измеренной датчиком температуры."""
-        if threshold:
-            return int(round(celsius / self.get_threshold_lsb())) << 7
-        else:
-            return int(round(celsius / self.get_current_lsb())) << 5
+        lsb = self.get_threshold_lsb() if threshold else self.get_current_lsb()
+        return int(round(celsius / lsb)) << 7
 
     def raw_to_celsius(self, raw: int, threshold: bool = False) -> float:
         """Преобразует температуру (source) из градусов Цельсия в сырое значение, для датчика.
         Если threshold Истина, то используется LSB для пороговых значений температуры,
         иначе используется LSB для измеренной датчиком температуры."""
-        if threshold:
-            return (raw >> 7) * self.get_threshold_lsb()
-        return (raw >> 5) * self.get_current_lsb()  # 11 бит
+        lsb = self.get_threshold_lsb() if threshold else self.get_current_lsb()
+        return lsb * (raw >> 7)  # 9 бит
 
     def get_threshold_lsb(self) -> float:
         """LSB для регистров TOS/THYST — всегда 0.5°C у LM75-совместимых."""
@@ -533,143 +584,88 @@ class LM75(LM75LikeBase):
     def get_supported_threshold_range(self) -> tuple[float, float]:
         return -55.0, 125.0
 
-
-class LM75AB(LM75):
-    """Программное представление LM75A, LM75B, LM75C, LM75D"""
-
-    def get_current_lsb(self) -> float:
-        """Возвращает текущий 'вес' младшего бита сырого значения температуры в градусах Цельсия."""
-        return 0.125  # 11 бит
-
-class LM75CD(LM75):
-    """Программное представление LM75, LM75C, LM75D."""
-    pass
-
-
-# =============================================================================
-# TMP75 / TMP175 / TMP275 (LM75-совместимые, 12 бит)
-# =============================================================================
-
+# =========================================================================
+# Основная реализация (полная логика современных чипов)
+# =========================================================================
 class TMP75(LM75LikeBase):
+    """Драйвер для TMP75/TMP175/TMP275 и современных LM75A/B/C/D.
+    Регистровая карта, probing и динамическое разрешение реализованы здесь.
     """
-    Драйвер для TMP75/TMP175/TMP275 (LM75-совместимые датчики).
-
-    Характеристики:
-        - Разрешение: 12 бит (0.0625°C)
-        - Точность (тип.): ±0.25°C (0…+70°C), ±0.5°C (–20…+85°C), ±1.0°C (–40…+125°C)
-        - Диапазон: –40…+125°C
-        - ONE_SHOT: не поддерживается
-        - Корпус: SOIC-8 (pin-to-pin совместим с LM75)
-
-    Заметка:
-        - Полная регистровая совместимость с LM75
-        - Требуется минимальное окно порогов ≥ 3 × точность (ГОСТ Р 8.736–2011)
-        - Для TMP75: ≥ 0.75°C (3 × 0.25°C)
-
-    Пример:
-        ts = TMP75(adapter, address=0x48)
-        ts.start_measurement()
-        temp = ts.get_measurement_value()
-    """
-
-    # TMP75 полностью совместим с LM75 (без инверсии)
     COMP_MODE_INVERTED: bool = False
+    # Регистр конфигурации идентичен TMP75 (Table 8 datasheet)
+    CONFIG_REG_TMP75 = (
+        # разрядность преобразователя: 0 - 9 бит; 1 - 10 бит; 2 - 11 бит; 3 - 12 бит
+        bit_field_info(name=LM75LikeBase.BF_NAME_CONV_RESOL, position=range(5, 7), valid_values=None, description=None),
+        # 1 - режим однократного измерения температуры с переходом в состояние выключено
+        bit_field_info(name=LM75LikeBase.BF_NAME_ONE_SHOT, position=range(7, 8), valid_values=None, description=None)
+    )
 
     def __init__(self, adapter: I2cAdapter, address: int):
         super().__init__(adapter, address)
-        self._config_fields = BitFields(LM75LikeBase.config_reg_LM75)
-        self._init_one_shot_support()  # Будет False (нет ONE_SHOT)
+        self._config_fields = BitFields((LM75LikeBase.config_reg_LM75, self.CONFIG_REG_TMP75))
+        self._probe_hardware_capabilities()  # Аппаратная проверка R1/R0 + OS
+
+        # оригинальные LM75, без битов управления разрешением АЦП температуры, отбрасываю!
+        if not self._resol_changeable:
+            raise RuntimeError("Обнаружен устаревший LM75 (без битов R1/R0). Поддерживаются только современные LM75A/B/C/D и TMP75!")
+
+    def _get_res_code(self) -> int:
+        """Возвращает код разрешения АЦП температуры: 0 - 9 бит; 1 - 10 бит; 2 - 11 бит; 3 - 12 бит"""
+        return (self.get_config_field(read_from_cache=False) >> 5) & 0x03
+
+    def _get_shift(self) -> int:
+        """Возвращает битовый сдвиг для текущего разрешения (7 для 9 бит, 4 для 12 бит)."""
+        return 7 - self._get_res_code()
 
     def get_current_lsb(self) -> float:
-        """Возвращает текущий 'вес' младшего бита сырого значения температуры."""
-        return 0.0625  # 12 бит
+        return 0.5 * 2 ** -self._get_res_code()
 
     def get_threshold_lsb(self) -> float:
-        """LSB для регистров TOS/THYST — всегда 0.5°C у LM75-совместимых."""
-        return 0.5  # Пороги всегда 9-битные (0.5°C LSB)
+        return self.get_current_lsb()
 
     def get_typical_accuracy(self) -> float:
-        """
-        Возвращает типичную погрешность датчика (°C) в диапазоне 0…+70°C.
-
-        Заметка:
-            - Для других диапазонов: ±0.5°C (–20…+85°C), ±1.0°C (–40…+125°C)
-            - Используется для проверки минимального окна порогов (3 × точность)
-        """
-        return 0.25  # ±0.25°C (типичная, 0…+70°C)
+        """Возвращает типичную погрешность датчика во всём рабочем диапазоне."""
+        return 1.0  # согласно Table 6.5 TMP75
 
     def celsius_to_raw(self, celsius: float, threshold: bool = False) -> int:
-        """
-        Преобразует температуру из градусов Цельсия в сырое значение.
-
-        Args:
-            celsius: Температура в градусах Цельсия.
-            threshold: Если True, используется LSB для порогов (0.5°C).
-
-        Returns:
-            int: Сырое 16-bit значение для записи в регистр.
-        """
-        if threshold:
-            # Пороги: 9 бит, LSB = 0.5°C
-            return int(round(celsius / self.get_threshold_lsb())) << 7
-        else:
-            # Температура: 12 бит, LSB = 0.0625°C
-            return int(round(celsius / self.get_current_lsb())) << 4
+        return int(round(celsius / self.get_current_lsb())) << self._get_shift()
 
     def raw_to_celsius(self, raw: int, threshold: bool = False) -> float:
-        """
-        Преобразует сырое значение в температуру (градусы Цельсия).
-
-        Args:
-            raw: Сырое значение из регистра.
-            threshold: Если True, используется LSB для порогов (0.5°C).
-
-        Returns:
-            float: Температура в градусах Цельсия.
-        """
-        if threshold:
-            # Пороги: 9 бит, LSB = 0.5°C
-            return (raw >> 7) * self.get_threshold_lsb()
-        # Температура: 12 бит, LSB = 0.0625°C
-        return (raw >> 4) * self.get_current_lsb()
+        return (raw >> self._get_shift()) * self.get_current_lsb()
 
     def get_conversion_cycle_time(self) -> int:
-        """Возвращает время преобразования в мс."""
-        return 28  # Типично для TMP75 (26-30 мс)
+        return 28 * (1 << self._get_res_code())
 
     def get_supported_threshold_range(self) -> tuple[float, float]:
-        """Возвращает допустимый диапазон температур для порогов."""
         return -40.0, 125.0
 
+    def set_resolution(self, code: int | None = None) -> int:
+        """Устанавливает или возвращает разрешение АЦП (0=9бит, 1=10, 2=11, 3=12)."""
+        _offs = 0
+        if code is None:
+            return _offs + self._get_res_code()
+        check_value(code, range(4), "Неверное значение кода разрешения АЦП температуры!")
+        self.refresh_config_cache()
+        self.set_config_field(value=code, field_name=LM75LikeBase.BF_NAME_CONV_RESOL)
+        self.set_get_config(value=self.get_config_field())
+        return _offs + code
 
-# =============================================================================
-# Псевдонимы для TMP175 и TMP275
-# =============================================================================
+# =========================================================================
+# пустые наследники для маркетинговых названий
+# =========================================================================
+class TMP175(TMP75): pass
+class TMP275(TMP75): pass
+class TMP75A(TMP75): pass
+class TMP75B(TMP75): pass
+class TMP75C(TMP75): pass
 
-class TMP175(TMP75):
-    """Драйвер для TMP175 (идентичен TMP75)."""
-    pass
-
-
-class TMP275(TMP75):
-    """Драйвер для TMP275 (идентичен TMP75)."""
-    pass
-
+class LM75A(TMP75): pass
+class LM75B(TMP75): pass
+class LM75C(TMP75): pass
+class LM75D(TMP75): pass
 
 class PerformanceMode:
     """Режимы производительности датчика."""
     HIGH_SPEED = const(0)    # Максимальная частота проведения измерений, меньше точность
     BALANCED = const(1)      # Баланс точности и скорости
     HIGH_ACCURACY = const(2) # Максимальная точность, медленнее (длительное время измерения)
-
-
-class LM75LikeBaseEx(LM75LikeBase):
-    """Базовый класс для настраиваемых датчиков температуры, типа TMP117, TMP119 и т. п."""
-    def get_set_performance_mode(self, mode: int | None = None) -> None:
-        """
-        Настраивает датчик на приоритет скорости или точности в зависимости от mode. Возвращает текущий режим производительности датчика.
-        Если mode is None, тогда метод возвращает текущий режим производительности без изменения режима.
-        Аргументы:
-            mode: PerformanceMode.HIGH_SPEED, BALANCED, или HIGH_ACCURACY
-        """
-        raise NotImplementedError()
