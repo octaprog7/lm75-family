@@ -1,89 +1,203 @@
 # LM75-family
-## [На русском](README_RU.md)
-Micropython module for control LM75 like (LM75, LM75A/B, TMP75, TMP175, TMP275) temperature sensors.
 
-## Supported Sensors
-| Sensor        | Resolution | Accuracy  | ONE_SHOT |
-|---------------|------------|-----------|----------|
-| LM75          | 0.5 C      | +/-2.0 C  | No       |
-| LM75A/B       | 0.125 C    | +/-0.5 C  | No       |
-| TMP75/175/275 | 0.0625 C   | +/-0.25 C | No       |
+```console
+> English speakers: This driver is documented in Russian. 
+> Use machine translation or check code comments for API reference.
+```
 
-# Connection
-Just connect your LM75 like sensor board to Arduino, ESP or any other board with MicroPython firmware.
+Micropython модуль для управления LM75-подобными (LM75, LM75A/B, TMP75, TMP175, TMP275) датчиками температуры.
+## Поддерживаемые датчики
+| Датчик        | Разрешение | Точность   | ONE_SHOT |
+|---------------|------------|------------|----------|
+| LM75          | 0.5 °C     | +/-2.0 °C  | Нет      |
+| LM75A/B       | 0.125 °C   | +/-0.5 °C  | Да       |
+| TMP75/175/275 | 0.0625 °C  | +/-0.25 °C | Да       |
 
-Supply voltage 3.3 volts! Use four wires to connect (I2C).
-1. +VCC (Supply voltage)
+# Подключение
+Просто подключите плату с LM75-подобным датчиком к Arduino, ESP или любой другой плате с прошивкой MicroPython.
+Питание 3.3 Вольта! Используйте четыре провода для подключения (I2C).
+
+1. +VCC (напряжение питания)
 2. GND
 3. SDA
 4. SCL
 
-Upload micropython firmware to the NANO(ESP, etc.) board, and then files: main_75.py, lm75mod.py and sensor_pack_2 folder. 
-Then open main_75.py in your IDE and run it.
+Загрузите прошивку MicroPython на плату NANO (ESP и т. д.), а затем файлы: main_75.py, lm75mod.py и в папку sensor_pack_2 полностью!
+Затем откройте main_75.py в вашей IDE и запустите его.
 
-# Pictures
+# Изображения
 ## IDE
 ![alt text](https://github.com/octaprog7/lm75-family/blob/master/pics/lm75AB_ide.png)
 ![alt text](https://github.com/octaprog7/lm75-family/blob/master/pics/lm75b_temp_meas.png)
 
-# Test results
+# Результаты тестирования
 * [LM75BD](/test_result/lm75bd.txt)
 * [TMP75CQ](/test_result/tmp75cq.txt)
 
-# Class hierarchy
+Заметки: 
+* Некоторые партии TMP75CQ имеют крайне низкий уровень шума (0.0–0.5 LSB). При стабильной температуре показания могут не меняться длительное время — это нормально, а не признак неисправности. Для проверки нагрейте датчик пальцем: значение должно плавно расти.    
+
+# Иерархия классов
 ```
-LM75LikeBase (base class)
-├── LM75
-│   ├── LM75AB (high accuracy: 0.125 C)
-│   └── LM75CD (standard accuracy: 0.5 C)
-└── TMP75
-    ├── TMP175 (alias)
-    └── TMP275 (alias)
+LM75LikeBase
+├── LM75 (legacy, 9 бит, фикс)
+│   └── LM75AB (наследник, 0.125 °C)  ← только этот есть
+└── TMP75 (modern, 9-12 бит, dynamic)
+    ├── TMP175, TMP275, TMP75A/B/C/D  ← псевдонимы
+    └── LM75A/B/C/D  ← псевдонимы TMP75!
 ```
-## Class and sensor mapping (lm75mod.py)
-| Class  | Supported sensors     | Resolution (LSB) | Accuracy (typ.) | Range        | ONE_SHOT |
-|--------|-----------------------|------------------|-----------------|--------------|----------|
-| LM75   | LM75, LM75C, LM75D    | 0.5 C            | +/-2.0 C        | -55...+125 C | No       |
-| LM75AB | LM75A, LM75B          | 0.125 C          | +/-0.5 C        | -55...+125 C | No       |
-| LM75CD | LM75, LM75C, LM75D    | 0.5 C            | +/-2.0 C        | -55...+125 C | No       |
-| TMP75  | TMP75, TMP175, TMP275 | 0.0625 C         | +/-0.25 C       | -40...+125 C | No       |
-| TMP175 | TMP175 (alias TMP75)  | 0.0625 C         | +/-0.25 C       | -40...+125 C | No       |
-| TMP275 | TMP275 (alias TMP75)  | 0.0625 C         | +/-0.25 C       | -40...+125 C | No       |
 
-# License
-MIT license
+## Сопоставление классов и датчиков (lm75mod.py)
+| Класс   | Поддерживаемые датчики | Разрешение (LSB) | Точность (тип.) | Диапазон      | ONE_SHOT |
+|---------|------------------------|------------------|-----------------|---------------|----------|
+| LM75    | LM75, LM75C, LM75D     | 0.5 °C           | +/-2.0 °C       | -55...+125 °C | Нет      |
+| LM75A   | LM75А, LM75B           | 0.125 °C         | +/-0.5 °С       | -55...+125 °C | Да       |
+| TMP75   | TMP75, TMP175, TMP275  | 0.0625 °C        | +/-0.25°С       | -40...+125 °C | Да       |
 
-## Notes
-Note: This driver is tested on real hardware with LM75BD, TMP75CQ.
+## Какой датчик выбрать?
 
-## Quick Start
+| Датчик  | Точность  | Разрешение | Цена | Применение                |
+|---------|-----------|------------|------|---------------------------|
+| LM75BD  | +/-0.5°C  | 0.125°C    | $    | Общие задачи              |
+| TMP75CQ | +/-0.25°C | 0.0625°C   | $$   | Прецизионные измерения    |
+| TMP117  | +/-0.1°C  | 0.0078°C   | $$$  | Медицинские, лабораторные |
+
+# Лицензия
+Лицензия MIT
+
+## Примечания
+Примечание: Этот драйвер протестирован на датчиках LM75B, TMP75CQ.
+
+## Быстрый старт
 ```python
 from machine import I2C, Pin
 from sensor_pack_2.bus_service import I2cAdapter
-from lm75mod import LM75AB
+from lm75mod import LM75A
 
-# Initialize
+# Инициализация
 i2c = I2C(id=1, scl=Pin(7), sda=Pin(6), freq=400_000)
 adapter = I2cAdapter(i2c)
-ts = LM75AB(adapter=adapter, address=0x48)
+ts = LM75A(adapter=adapter, address=0x48)
 
-# Read temperature
+# Чтение температуры
 ts.start_measurement()
-print(f"Temperature: {ts.get_measurement_value():.3f} C")
+print(f"Температура: {ts.get_measurement_value():.3f} C")
 ```
 
-# Troubleshooting
-| Problem                  | Possible Cause          | Solution                                 |
-|--------------------------|-------------------------|------------------------------------------|
-| ALERT=True always        | Therm Mode + hysteresis | Cool below Tmin or switch to Alert Mode  |
-| No I2C communication     | Wrong address/pull-ups  | Check A0-A2, 4.7kΩ pull-up on SDA/SCL    |
-| Inaccurate readings      | Self-heating/mounting   | Use set_temperature_offset()             |
-| ValueError on thresholds | Window too narrow       | Increase T_max - T_min (min 3× accuracy) |
+# Поиск и устранение неисправностей
 
-# Support the project
-If you found this driver helpful, please rate it!
-This helps us develop the project and add support for new sensors.
-If you liked my software, please be generous and give it a star!
+| Проблема                                  | Возможная причина                      | Решение                                                    |
+|-------------------------------------------|----------------------------------------|------------------------------------------------------------|
+| ALERT=True всегда                         | Терморежим + гистерезис                | Охладите ниже Tmin или переключитесь в режим оповещения    |
+| Нет связи по I2C                          | Неверный адрес/подтягивающие резисторы | Проверьте A0-A2, подтягивающий резистор 4,7 кОм на SDA/SCL |
+| Неточные показания                        | Самонагрев/монтаж                      | Используйте set_temperature_offset()                       |
+| Ошибка ValueError при пороговых значениях | Слишком узкое окно                     | Увеличьте T_max - T_min (минимум 3× точность)              |
 
-# Author
-Roman Shevchik <goctaprog@gmail.com>
+
+# Часто задаваемые вопросы (ЧАВО)
+
+## Общие вопросы
+
+**В: Чем LM75 отличается от TMP75?**
+
+О: TMP75 имеет вдвое лучшее разрешение (0.0625 °C против 0.125 °C) и точность (плюс-минус 0.25 °C против плюс-минус 0.5 °C). TMP75 также стабильнее при длительных измерениях.
+
+---
+
+**В: Можно ли использовать датчик с питанием 5V?**
+
+О: Для LM75 и TMP75 максимальное напряжение питания 3.6V. Используйте только 3.3V. Для TMP117 допускается питание от 1.7V до 5.5V.
+
+---
+
+**В: Почему ALERT не сбрасывается?**
+
+О: В режиме Therm Mode ALERT сбрасывается только при охлаждении ниже Tmin. В режиме Interrupt ALERT сбрасывается чтением регистра конфигурации.
+
+---
+
+**В: Как изменить I2C адрес датчика?**
+
+О: Подключите пины A0, A1, A2 к GND, V+, SDA или SCL согласно таблице адресов в даташите. По умолчанию все три пина на GND дают адрес 0x48.
+
+---
+
+**В: Поддерживается ли режим ONE_SHOT?**
+
+О: Классический LM75 не поддерживает режим ONE_SHOT, а TMP75, LM75X, TMP117 поддерживают. Проверяйте методом is_one_shot_supported().
+
+---
+
+## Технические вопросы
+
+**В: Что означает ошибка "Окно температур слишком узкое"?**
+
+О: Драйвер проверяет минимальное окно порогов по правилу 3-x точность. Для TMP75 минимальное окно 0.75 °C, для LM75 6.0 °C.
+
+---
+
+**В: Почему показания температуры не меняются?**
+
+О: Возможные причины:
+1. Датчик в режиме SHUTDOWN
+2. I2C соединение нарушено
+3. Неверный адрес датчика
+4. Отсутствие подтяжек на SDA/SCL
+
+---
+
+**В: Как уменьшить шум измерений?**
+
+О: Для датчиков с усреднением используйте (8, 32 или 64 измерения). Для LM75/TMP75 увеличьте интервал между измерениями до 100 мс и более.
+
+---
+
+**В: Что такое CompMode.COMPARATOR и CompMode.INTERRUPT?**
+
+О: Это режимы работы компаратора:
+- COMPARATOR (термостатный): Физический вывод датчика ALERT активен пока температура вне диапазона
+- INTERRUPT (прерывание): Физический вывод датчика ALERT сбрасывается чтением регистра
+
+---
+
+**В: Зачем нужна валидация порогов?**
+
+О: Слишком узкое окно порогов вызывает ложные срабатывания из-за шума датчика. Правило 3-x точность обеспечивает надёжную работу компаратора.
+
+---
+
+## Вопросы по установке
+
+**В: Какие подтяжки нужны для I2C?**
+
+О: Рекомендуемое значение 4.7 кОм до 10 кОм на линии SDA и SCL.
+
+---
+
+**В: Как подключить несколько датчиков на одну шину I2C?**
+
+О: Используйте разные адреса. Для LM75/TMP75 можно получить до 8 адресов комбинацией пинов A0. A1, A2.
+
+---
+
+**В: Где найти файлы драйвера?**
+
+О: Основные файлы:
+- lm75mod.py - драйвер для LM75, TMP75
+- comp_interface.py - интерфейс компаратора
+- sensor_pack_2/ - базовые классы
+
+---
+
+**В: Как запустить тесты?**
+
+О: Загрузите файлы на плату с MicroPython и выполните:
+```python
+exec(open('main_75.py').read())
+```
+
+# Поддержите проект
+Так как положительной обратной связи от клонирующих мои репозитории очень мало я не вижу смысла поддерживать англоязычные справочные материалы!
+
+# Автор
+Роман Шевчик <goctaprog@gmail.com>
