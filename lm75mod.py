@@ -81,8 +81,8 @@ class LM75LikeBase(IBaseSensorEx, ICompInterface, Iterator):
         # OS является выходом ИМС с открытым стоком, поэтому нужен подтягивающий резистор!
         bit_field_info(name=BF_NAME_OS_POLARITY, position=range(2, 3), valid_values=None, description=None),
         # Определяет количество событий over setpoint, необходимых для возникновения состояния ОS (over setpoint).
-        # Для снижения влияния шума. Рекомендую максимальное значение - 4!
-        bit_field_info(name=BF_NAME_FAULT_QUEUE, position=range(3, 5), valid_values=range(5), description=None),
+        # Для снижения влияния шума. Рекомендую максимальное значение - 3!
+        bit_field_info(name=BF_NAME_FAULT_QUEUE, position=range(3, 5), valid_values=range(4), description=None),
     )
 
     def _convert_comp_mode(self, mode: int) -> int:
@@ -463,6 +463,25 @@ class LM75LikeBase(IBaseSensorEx, ICompInterface, Iterator):
         cfg_raw = self.get_config_field()
         self.set_get_config(value=cfg_raw)
 
+    def set_fault_queue(self, faults: int | None = None) -> int:
+        """
+        Устанавливает или возвращает фильтр помех (Fault Queue).
+        Определяет количество(!) последовательных событий over-setpoint до срабатывания OS/ALERT.
+
+        Аргументы:
+            faults: 0=одно событие (мгновенно), 1=два события, 2=четыре события, 3=шесть событий.
+                    Если None — только чтение текущего значения.
+        Возвращает:
+            int: Текущий код Fault Queue (0..3).
+        """
+        if faults is not None:
+            check_value(faults, range(4), "Неверное значение Fault Queue! Допустимо 0..3.")
+            self.refresh_config_cache()
+            self.set_config_field(value=faults, field_name=self.BF_NAME_FAULT_QUEUE)
+            self.set_get_config(value=self.get_config_field())
+
+        return self.get_config_field(self.BF_NAME_FAULT_QUEUE, read_from_cache=True)
+
     # ICompInterface start
     def set_comp_mode(self, mode: int | None = None, active_alarm_level: bool = False) -> int:
         if mode is not None:
@@ -606,19 +625,23 @@ class TMP75(LM75LikeBase):
         self._probe_hardware_capabilities()  # Аппаратная проверка R1/R0 + OS
 
         # оригинальные LM75, без битов управления разрешением АЦП температуры, отбрасываю!
-        if not self._resol_changeable:
+        if not self._resol_changeable and type(self) is TMP75:
             raise RuntimeError("Обнаружен устаревший LM75 (без битов R1/R0). Поддерживаются только современные LM75A/B/C/D и TMP75!")
 
-    def _get_res_code(self) -> int:
-        """Возвращает код разрешения АЦП температуры: 0 - 9 бит; 1 - 10 бит; 2 - 11 бит; 3 - 12 бит"""
+    def get_resolution_code(self) -> int:
+        """
+        Возвращает текущий код разрешения АЦП (0..3).
+        0 = 9 бит, 1 = 10 бит, 2 = 11 бит, 3 = 12 бит.
+        Читаёт напрямую из железа, минуя кэш.
+        """
         return (self.get_config_field(read_from_cache=False) >> 5) & 0x03
 
     def _get_shift(self) -> int:
         """Возвращает битовый сдвиг для текущего разрешения (7 для 9 бит, 4 для 12 бит)."""
-        return 7 - self._get_res_code()
+        return 7 - self.get_resolution_code()
 
     def get_current_lsb(self) -> float:
-        return 0.5 * 2 ** -self._get_res_code()
+        return 0.5 * 2 ** -self.get_resolution_code()
 
     def get_threshold_lsb(self) -> float:
         return self.get_current_lsb()
@@ -634,7 +657,7 @@ class TMP75(LM75LikeBase):
         return (raw >> self._get_shift()) * self.get_current_lsb()
 
     def get_conversion_cycle_time(self) -> int:
-        return 28 * (1 << self._get_res_code())
+        return 28 * (1 << self.get_resolution_code())
 
     def get_supported_threshold_range(self) -> tuple[float, float]:
         return -40.0, 125.0
@@ -643,7 +666,7 @@ class TMP75(LM75LikeBase):
         """Устанавливает или возвращает разрешение АЦП (0=9бит, 1=10, 2=11, 3=12)."""
         _offs = 0
         if code is None:
-            return _offs + self._get_res_code()
+            return _offs + self.get_resolution_code()
         check_value(code, range(4), "Неверное значение кода разрешения АЦП температуры!")
         self.refresh_config_cache()
         self.set_config_field(value=code, field_name=LM75LikeBase.BF_NAME_CONV_RESOL)
@@ -663,6 +686,48 @@ class LM75A(TMP75): pass
 class LM75B(TMP75): pass
 class LM75C(TMP75): pass
 class LM75D(TMP75): pass
+
+
+class TMP102(TMP75):
+    """
+    Программное представление для TMP102 — LM75-совместимый датчик с фиксированным 12-битным разрешением.
+
+    Особенности:
+        - Разрешение: 12 бит
+        - Точность: +/- 0.5 °C в диапазоне(-40…+125 °C)
+        - Время конвертации: ~26 мс
+        - One-Shot: поддерживается (бит OS)
+        - Биты R1/R0 в регистре конфиг.: отсутствуют (зарезервированы)
+    """
+
+    def __init__(self, adapter: I2cAdapter, address: int):
+        super().__init__(adapter, address)
+        # _resol_changeable = False
+        # One-Shot поддерживается аппаратно
+        self._one_shot_mode_support = True
+
+    def get_typical_accuracy(self) -> float:
+        return 0.5  # +/- 0.5 °C согласно даташиту
+
+    def get_current_lsb(self) -> float:
+        return 0.0625  # разрешение 12-бит
+
+    def get_threshold_lsb(self) -> float:
+        return self.get_current_lsb()  # пороги температуры в том же формате
+
+    def get_conversion_cycle_time(self) -> int:
+        return 26  # Фиксированное время конвертации (~26 мс)
+
+    def get_resolution_code(self) -> int:
+        """TMP102 всегда работает в 12-битном режиме."""
+        return 3  # Код 12 бит
+
+    def set_resolution(self, code: int | None = None) -> int:
+        """TMP102 не поддерживает изменение разрешения."""
+        if code is not None:
+            raise NotImplementedError("TMP102 имеет фиксированное разрешение 12 бит")
+        return self.get_resolution_code()
+
 
 class PerformanceMode:
     """Режимы производительности датчика."""
