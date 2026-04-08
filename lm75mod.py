@@ -730,9 +730,9 @@ class TMP102(TMP75):
 
 
 class PerformanceMode:
-    """Режимы производительности для TMP11X/TMP119."""
-    ULTRA_FAST      = const(0)  # ~16 мс   (1 отсчет,   15.5 мс)
-    HIGH_SPEED      = const(1)  # ~125 мс  (1 отсчет,   125 мс)
-    BALANCED        = const(2)  # ~1.0 с   (8 отсчетов, 125 мс)
-    HIGH_ACCURACY   = const(3)  # ~8.0 с   (32 отсчет,  250 мс)
-    MAX_ACCURACY    = const(4)  # ~32 с    (64 отсчет,  500 мс)
+    """Режимы производительности для датчиков, подобных TMP11X."""
+    ULTRA_FAST      = const(0)  # наивысшая частота измерений (наименьшая точность)
+    HIGH_SPEED      = const(1)  #
+    BALANCED        = const(2)  #
+    HIGH_ACCURACY   = const(3)  #
+    MAX_ACCURACY    = const(4)  # наивысшая точность (наименьшая частота измерений)
