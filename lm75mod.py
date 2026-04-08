@@ -475,7 +475,7 @@ class LM75LikeBase(IBaseSensorEx, ICompInterface, Iterator):
             int: Текущий код Fault Queue (0..3).
         """
         if faults is not None:
-            check_value(faults, range(4), "Неверное значение Fault Queue! Допустимо 0..3.")
+            # check_value(faults, range(4), "Неверное значение Fault Queue! Допустимо 0..3.")
             self.refresh_config_cache()
             self.set_config_field(value=faults, field_name=self.BF_NAME_FAULT_QUEUE)
             self.set_get_config(value=self.get_config_field())
