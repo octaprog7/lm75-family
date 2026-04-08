@@ -354,6 +354,32 @@ def test_resolution_change(ts: TMP75) -> bool | None:
         print_status("Ошибка", str(e), strFail)
         return False
 
+def test_fault_queue(ts: LM75LikeBase) -> bool:
+    """Тест: Установка и чтение фильтра помех (Fault Queue)."""
+    print_header("ТЕСТ: Fault Queue (очередь неисправностей)", "-")
+    try:
+        # 1. Читаем текущее состояние
+        initial_code = ts.set_fault_queue()
+        print_status("Текущий код (соответствует числу событий) Fault Queue", initial_code)
+
+        # 2. Проверяем запись/чтение всех допустимых значений (0..3)
+        for code in range(4):
+            ts.set_fault_queue(code)
+            # set_fault_queue() без аргументов работает в режиме чтения
+            verify = ts.set_fault_queue()
+            if verify != code:
+                print_status(f"Код {code} → чтение", f"СБОЙ (получено {verify})", strFail)
+                return False
+
+        # 3. Восстанавливаем исходное значение
+        ts.set_fault_queue(initial_code)
+        print_status("Восстановление конфига", "Исходное значение возвращено")
+        print_status("Fault Queue", "Все значения корректно записаны/прочитаны")
+        return True
+    except Exception as e:
+        print_status("Ошибка", str(e), strFail)
+        return False
+
 
 # =============================================================================
 # ОСНОВНАЯ ПРОГРАММА
@@ -404,6 +430,7 @@ def main() -> None:
         ("Обработка ошибок", test_error_handling),
         ("Выключение с ONE_SHOT", lambda sensor: test_shutdown_one_shot(sensor)),
         ("Изменение разрешения", lambda sensor: test_resolution_change(sensor)),
+        ("Fault Queue", test_fault_queue),
     ]
 
     results: list[tuple[str, bool]] = []
