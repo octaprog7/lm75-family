@@ -1,82 +1,121 @@
 ============================================================
- ТЕСТИРОВАНИЕ TMP11X (TMP117/TMP119)
+ UNIVERSAL TEST FOR LM75/TMP11X FAMILY SENSORS
 ============================================================
-Инициализация I2C...
-  [OK] I2C порт: ID=1, freq=400kHz
-  Устройства на шине: ['0x48']
-  [OK] Датчик: TMP11X @ 0x48
-  [OK] Инициализация драйвера: TMP11X
-	device id: id_tmp11X(revision_number=0, device_id=279)
+Initializing I2C...
+  [OK] I2C port: ID=1, freq=400kHz
 
-============================================================
- ЗАПУСК ТЕСТОВ
-============================================================
-
-------------------------------------------------------------
- ТЕСТ 1: Базовое чтение
-------------------------------------------------------------
-  [OK] Температура: 26.7891 °C
-  [OK] Точность (тип.): +/- 0.10 °C
-  [OK] Разрешение (LSB): 0.007813 °C
-
-------------------------------------------------------------
- ТЕСТ 2: Performance Modes
-------------------------------------------------------------
-  [OK] ULTRA_FAST: Время: 16 мс
-  [OK] HIGH_SPEED: Время: 125 мс
-  [OK] BALANCED: Время: 250 мс
-  [OK] HIGH_ACCURACY: Время: 1000 мс
-  [OK] MAX_ACCURACY: Время: 4000 мс
-  [OK] Все режимы: Переключены корректно
-
-------------------------------------------------------------
- ТЕСТ 3: Пороги компаратора
-------------------------------------------------------------
-  [OK] Текущие пороги: 20.0000 / 30.0000 °C
-  [OK] Верификация: Значения совпадают
-
-------------------------------------------------------------
- ТЕСТ 4: SHUTDOWN и ONE_SHOT
-------------------------------------------------------------
-  [OK] Запуск One-Shot: Конвертация...
-  [OK] Температура (One-Shot): 26.8594 °C
-  [OK] Включение SHUTDOWN: ...
-  [OK] Состояние: SHUTDOWN
-  [OK] Выход из SHUTDOWN: ...
-  [OK] Состояние: ACTIVE
-
-------------------------------------------------------------
- ТЕСТ 5: Статистика (20 измерений)
-------------------------------------------------------------
-  -> Интервал: 175 мс, LSB: 0.007813 °C
-    [ 0] 26.8594 °C
-    [ 5] 26.8359 °C
-    [10] 26.8281 °C
-    [15] 26.8203 °C
-
-  Результаты:
-     Min:     26.8047 °C
-     Max:     26.8594 °C
-     Avg:     26.8258 °C
-     Range:   0.0547 °C (7.00 LSB)
-  [OK] Стабильность: Хорошая (< 10 LSB)
-
-------------------------------------------------------------
- ТЕСТ 6: Fault Queue
-------------------------------------------------------------
-  [OK] Fault Queue: [HW_LIMIT] метод не реализован в драйвере
+Searching for sensor...
+  [OK] Sensor: TMP11X @ 0x48
 
 ############################################################
- ИТОГОВЫЙ ОТЧЁТ
+ Test suite for driver TMP11X
 ############################################################
-  [ПРОЙДЕН] Базовое чтение
-  [ПРОЙДЕН] Performance Modes
-  [ПРОЙДЕН] Пороги компаратора
-  [ПРОЙДЕН] SHUTDOWN / ONE_SHOT
-  [ПРОЙДЕН] Статистика
-  [ПРОЙДЕН] Fault Queue
 
-Результат: 6/6 тестов пройдено
-Все тесты успешны!
+------------------------------------------------------------
+ TEST 1: Basic read
+------------------------------------------------------------
+  [OK] Temperature: 28.875 C
+  [OK] Accuracy (typ.): +/- 0.10 C
+  [OK] Resolution (LSB): 0.00781 C
 
-Финальная температура: 26.8047 °C
+------------------------------------------------------------
+ TEST 2: Comparator thresholds
+------------------------------------------------------------
+  [OK] Current thresholds: 20.000 / 30.000 C
+  -> Setting thresholds: 20.0 / 30.0 C
+  [OK] New thresholds: 20.000 / 30.000 C
+
+------------------------------------------------------------
+ TEST 3: Comparator modes
+------------------------------------------------------------
+  [OK] Current mode: Interrupt
+  -> Switching to Interrupt mode...
+  [OK] New mode: Interrupt
+  -> Switching to Comparator mode...
+  [OK] Final mode: Comparator
+
+------------------------------------------------------------
+ TEST 4: Power-saving mode SHUTDOWN
+------------------------------------------------------------
+  [OK] Current state: ACTIVE
+  -> Enabling SHUTDOWN...
+  [OK] After enable: SHUTDOWN
+  -> Exiting SHUTDOWN...
+  [OK] After disable: ACTIVE
+  [OK] Temperature after exit: 28.883 C
+
+------------------------------------------------------------
+ TEST 5: Statistics (30 measurements)
+------------------------------------------------------------
+  -> Interval: 1050 ms, LSB: 0.00781 C
+    [ 1] 28.891 C
+    [ 6] 28.852 C
+    [11] 28.836 C
+    [16] 28.820 C
+    [21] 28.789 C
+    [26] 28.766 C
+
+  Results:
+     Min:     28.75000 C
+     Max:     28.89063 C
+     Avg:     28.81458 C
+     Median:  28.81641 C
+     Range:   0.14063 C (18.0 LSB)
+     StdDev:  0.03838 C (4.91 LSB)
+  [WARN] Stability: Low (>= 4 LSB)
+
+------------------------------------------------------------
+ TEST 6: Iterator (10 values)
+------------------------------------------------------------
+  -> Reading via iterator:
+     [ 1] 28.734 C
+     [ 2] 28.734 C
+     [ 3] 28.734 C
+     [ 4] 28.734 C
+     [ 5] 28.734 C
+     [ 6] 28.734 C
+     [ 7] 28.734 C
+     [ 8] 28.734 C
+     [ 9] 28.734 C
+     [10] 28.734 C
+  [OK] Iterator: Working correctly
+
+------------------------------------------------------------
+ TEST 7: Error handling
+------------------------------------------------------------
+  [OK] Threshold -100C: ValueError caught correctly
+  [OK] Tmin >= Tmax: ValueError caught correctly
+  [OK] Invalid type: Error caught correctly
+  [OK] Validation: All errors handled correctly
+
+------------------------------------------------------------
+ TEST: One-Shot Measurement
+------------------------------------------------------------
+  -> Starting One-Shot conversion...
+  [OK] Temperature: 28.742 C
+  [WARN] State after conversion: ACTIVE
+  [WARN] Resolution change: HW LIMIT
+
+------------------------------------------------------------
+ TEST: Fault Queue
+------------------------------------------------------------
+  [WARN] Fault Queue: HW LIMIT method not implemented in driver
+
+############################################################
+ FINAL REPORT
+############################################################
+  [PASSED] Basic read
+  [PASSED] Comparator thresholds
+  [PASSED] Comparator modes
+  [PASSED] SHUTDOWN mode
+  [PASSED] Statistics
+  [PASSED] Iterator
+  [PASSED] Error handling
+  [PASSED] Shutdown with ONE_SHOT
+  [HW LIMIT] Resolution change
+  [PASSED] Fault Queue
+
+Result: 9/10 passed, 1 hardware limited, 0 failed
+OK: All supported functions work correctly. Hardware limits noted.
+
+Final temperature: 28.750 C
