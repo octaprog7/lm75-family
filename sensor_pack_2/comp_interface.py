@@ -202,3 +202,15 @@ class ICompInterface:
             Примеры: LM75/TMP75 -> (-55.0, 125.0), TMP117/TMP119 -> (-55.0, 150.0)
         """
         raise NotImplementedError
+
+    def _validate_thresholds(self, low: float, high: float) -> None:
+        """Универсальная проверка порогов компаратора."""
+        min_t, max_t = self.get_supported_thresholds()
+        if not (min_t <= low < high <= max_t):
+            raise ValueError(
+                f"Invalid thresholds: T_low={low}, T_high={high}. Expected {min_t} <= T_low < T_high <= {max_t}")
+
+        # Правило 1/3 (ГОСТ Р 8.736 / ISO 14253-1): окно >= 3 × точность
+        min_wnd = 3 * self.get_typical_accuracy()
+        if (high - low) < min_wnd:
+            raise ValueError(f"Window too narrow: {high - low:.3f}°C < {min_wnd:.3f}°C (min 3x accuracy)")
