@@ -192,3 +192,13 @@ class ICompInterface:
             - В режиме COMPARATOR сброс происходит автоматически при T_min <= T <= T_max.
         """
         raise NotImplementedError()
+
+    def get_supported_thresholds(self) -> tuple[float, float]:
+        """
+        Возвращает аппаратно допустимый диапазон температурных порогов.
+
+        Returns:
+            tuple[float, float]: (min_temp, max_temp) в °C.
+            Примеры: LM75/TMP75 -> (-55.0, 125.0), TMP117/TMP119 -> (-55.0, 150.0)
+        """
+        raise NotImplementedError
