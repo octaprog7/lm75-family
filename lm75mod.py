@@ -1,20 +1,100 @@
 # MIT license
 
-# Иерархия
-# LM75LikeBase          # Абстрактный контракт, I2C, probing, пороги
-#    ├─ LM75            # Legacy: 9 бит фикс, 100 мс конвертация
-#    └─ TMP75           # Modern: 9-12 бит динамически, One-Shot, 28-224 мс
-#         ├─ TMP175, TMP275, TMP75A/B/C  # Пустые псевдонимы
-#         └─ LM75A/B/C/D                 # Пустые псевдонимы
-
 from micropython import const
 from sensor_pack_2.bus_service import I2cAdapter
-from sensor_pack_2.base_sensor import DeviceEx, IBaseSensorEx, Iterator, check_value, check_value_ex
+from sensor_pack_2.base_sensor import DeviceEx, IBaseSensorEx, Iterator, check_value # , check_value_ex
 from sensor_pack_2.bitfield import BitFields, bit_field_info, make_namedtuple
-from sensor_pack_2.comp_interface import ICompInterface
+from sensor_pack_2.comp_interface import ICompInterface # , CompMode
 
 
-class LM75LikeBase(IBaseSensorEx, ICompInterface, Iterator):
+class ISensorPowerControl:
+    """
+    Интерфейс управления энергопотреблением датчика.
+    """
+    def set_shutdown(self, value: bool | None = None, read_from_cache: bool = False) -> bool:
+        """
+        Управляет режимом энергосбережения датчика.
+
+        Args:
+            value: True -> включить Shutdown. False -> активный режим.
+                   Если None -> вернуть текущее состояние без изменений.
+            read_from_cache: Если Истина, то возвращает значение из местного кэша, иначе читает из датчика
+        Returns:
+            bool: Текущее состояние (True = Shutdown, False = Active).
+        """
+        raise NotImplementedError
+
+
+class ILM75Sensor:
+    """
+        Абстрактный интерфейс для датчиков семейства LM75/TMP75/TMP102/TMP117.
+        Определяет базовый интерфейс для чтения температуры и конвертации raw-данных.
+        Управление компаратором вынесено в ICompInterface
+    """
+
+    def get_typical_accuracy(self) -> float:
+        """
+            Возвращает типовую точность датчика в градусах Цельсия (±°C).
+            Отражает максимальное ожидаемое отклонение от истинной температуры
+            в номинальных условиях эксплуатации (согласно даташиту).
+
+            Returns:
+                float: Типовая точность (например, 0.1 для ±0.1°C).
+        """
+        raise NotImplementedError
+
+    def get_current_lsb(self) -> float:
+        """
+            Возвращает вес младшего значащего бита (LSB) регистра температуры в °C.
+            Определяет разрешающую способность преобразования АЦП датчика.
+
+            Returns:
+                float: Значение LSB в градусах Цельсия (например, 0.0078125).
+        """
+        raise NotImplementedError
+
+    def get_threshold_lsb(self) -> float:
+        """
+            Возвращает вес LSB для регистров температурных порогов в °C.
+            Обычно совпадает с get_current_lsb(), но вынесен отдельно для датчиков,
+            у которых разрешение порогов отличается от разрешения измерений.
+
+            Returns:
+                float: Значение LSB порогов в градусах Цельсия.
+        """
+        raise NotImplementedError
+
+    def celsius_to_raw(self, celsius: float, threshold: bool = False) -> int:
+        """
+            Преобразует температуру из градусов Цельсия в сырое целочисленное
+            значение, готовое для записи в регистры датчика.
+
+            Args:
+                celsius (float): Температура в градусах Цельсия.
+                threshold (bool): Если True, применяется форматирование/масштабирование,
+                    специфичное для регистров порогов (если отличается от основного).
+
+            Returns:
+                int: Целочисленное raw-значение (обычно 16-битное дополнение до двух).
+        """
+        raise NotImplementedError
+
+    def raw_to_celsius(self, raw: int, threshold: bool = False) -> float:
+        """
+            Преобразует сырое целочисленное значение из регистра датчика
+            в температуру в градусах Цельсия.
+
+            Args:
+                raw (int): Сырое значение из регистра (может быть со знаком).
+                threshold (bool): Указывает, что значение взято из регистра порогов.
+                Влияет на логику расширения знака или масштабирования, если требуется.
+
+            Returns:
+                float: Температура в градусах Цельсия.
+        """
+        raise NotImplementedError
+
+class LM75LikeBase(ILM75Sensor, IBaseSensorEx, ICompInterface, ISensorPowerControl, Iterator):
     """Класс для работы с датчиком температуры, подобным LM75."""
     # Индекс регистра температуры
     ADDR_TEMPERATURE = const(0x00)
@@ -43,17 +123,17 @@ class LM75LikeBase(IBaseSensorEx, ICompInterface, Iterator):
     # Разные производители используют противоположные значения битов в регистре
     # конфигурации (Configuration Register):
     # LM75, MAX30205 (бит 1 регистра Config):
-    #   Бит = 0 → Comparator mode (термостат)
-    #   Бит = 1 → Interrupt mode (прерывание)
+    #   Бит = 0 -> Comparator mode (термостат)
+    #   Бит = 1 -> Interrupt mode (прерывание)
     #
     # TMP117, TMP119 (бит 4 регистра Config, поле T/N_A):
-    #   Бит = 0 → Alert mode (прерывание) ИНВЕРСИЯ!
-    #   Бит = 1 → Therm mode (термостат) ИНВЕРСИЯ!
+    #   Бит = 0 -> Alert mode (прерывание) ИНВЕРСИЯ!
+    #   Бит = 1 -> Therm mode (термостат) ИНВЕРСИЯ!
     #
     # Этот флаг указывает, нужно ли инвертировать универсальные значения
     # CompMode.COMPARATOR/INTERRUPT при записи в регистр конкретного датчика.
-    # Для LM75 и т. п.: CompMode.COMPARATOR (0) → регистр конфигурации, бит 0 = 0
-    # Для TMP117, TMP119: CompMode.COMPARATOR (0) → регистр конфигурации, бит 4 = 1 ⚠(инверсия!)
+    # Для LM75 и т. п.: CompMode.COMPARATOR (0) -> регистр конфигурации, бит 0 = 0
+    # Для TMP117, TMP119: CompMode.COMPARATOR (0) -> регистр конфигурации, бит 4 = 1 ⚠(инверсия!)
     COMP_MODE_INVERTED: bool = False
 
     def get_hw_reg_addr(self, reg_index: int) -> int:
@@ -92,26 +172,12 @@ class LM75LikeBase(IBaseSensorEx, ICompInterface, Iterator):
         Возвращает:
             int: Значение для записи в регистр датчика.
         Пример:
-            LM75:  _convert_comp_mode(0) → 0 (без инверсии)
-            TMP117: _convert_comp_mode(0) → 1 (инверсия!)
+            LM75:  _convert_comp_mode(0) -> 0 (без инверсии)
+            TMP117: _convert_comp_mode(0) -> 1 (инверсия!)
         """
         if self.COMP_MODE_INVERTED:
             return 1 - mode  # Инверсия для TMP117/TMP119
-        return mode  # Без изменений для LM75, MAX30205
-
-    def _validate_thresholds(self, low: float, high: float) -> None:
-        """Проверяет, что оба порога находятся в допустимом диапазоне,
-        поддерживаемом данным типом датчика.
-        Выбрасывает ValueError при нарушении."""
-        tpl_valid_rng = self.get_supported_threshold_range()
-        def _get_err_str(val: float | int) -> str:
-            """Возвращает строку сообщения об ошибке"""
-            return f"Пороговое значение {val} находится вне пределов поддерживаемого диапазона: [{tpl_valid_rng[0]}, {tpl_valid_rng[1]}]"
-        check_value_ex(low, tpl_valid_rng, _get_err_str(low))
-        check_value_ex(high, tpl_valid_rng, _get_err_str(high))
-        # Проверка: low < high
-        if low >= high:
-            raise ValueError(f"Tmin ({low}) должен быть строго меньше Tmax ({high})!")
+        return mode  # Без изменений для LM75X, TMP75X
 
     def __init__(self, adapter: I2cAdapter, address: int):
         # Создаем объект DeviceEx для I2C обмена
@@ -131,11 +197,11 @@ class LM75LikeBase(IBaseSensorEx, ICompInterface, Iterator):
         conn = self._connection
         addr = self.ADDR_CONFIG  # 0x01
 
-        # 1. Читаем текущее состояние (bytes[0] → int)
+        # 1. Читаем текущее состояние (bytes[0] -> int)
         original_cfg = conn.read_reg(addr, 1)[0]
 
         try:
-            # 2. Тест: устанавливаем биты R1/R0 в 1 (код 3 → 12 бит)
+            # 2. Тест: устанавливаем биты R1/R0 в 1 (код 3 -> 12 бит)
             test_cfg = original_cfg | 0x60
             conn.write_reg(addr, test_cfg, 1)
 
@@ -195,7 +261,7 @@ class LM75LikeBase(IBaseSensorEx, ICompInterface, Iterator):
         conn = self._connection
         _raw = conn.write_reg(addr, value, bytes_count)
 
-    def set_get_config(self, value: int | None, bytes_count: int = None) -> int | None:
+    def set_config(self, value: int | None, bytes_count: int = None) -> int | None:
         """Чтение/запись регистра конфигурации.
         Если value is None — чтение, иначе — запись.
         bytes_count по умолчанию берётся из CONFIG_REG_WIDTH.
@@ -226,87 +292,20 @@ class LM75LikeBase(IBaseSensorEx, ICompInterface, Iterator):
         raw = self.set_get_temp_raw(addr=hw_addr)
         return self.raw_to_celsius(raw)
 
-    def start_measurement(self, one_shot: bool = False,
-                          mode: int | None = None,
-                          thresholds: tuple[float, float] | None = None,
-                          active_alarm_level: bool = False) -> None:
+    def start_measurement(self, one_shot: bool = False):
         """
-        Настраивает датчик и управляет режимом измерения.
+        Запуск процесса измерений.
 
-        Аргументы:
-            one_shot (bool):
-                - True: однократное измерение (ONE_SHOT).
-                - False: непрерывные измерения (Continuous).
-                - Игнорируется, если датчик не поддерживает ONE_SHOT (LM75).
-                - Работает для: MAX30205, TMP117, TMP119.
-                - После завершения ONE_SHOT датчик автоматически переходит в SHUTDOWN.
-
-            mode (int | None): Режим работы компаратора.
-                - CompMode.COMPARATOR (0) — термостатный режим.
-                  ALERT активен, пока T вне диапазона [T_min, T_max].
-                  Сбрасывается автоматически при T внутри диапазона [T_min, T_max].
-                - CompMode.INTERRUPT (1) — режим прерывания.
-                  ALERT активен при T вне диапазона [T_min, T_max].
-                  Сбрасывается только чтением регистра.
-                - Если None — не изменяется.
-
-            thresholds (tuple[float, float] | None):
-                - (T_min, T_max): диапазон в градусах Цельсия.
-                - Если None — не изменяется.
-
-            active_alarm_level (bool):
-                - False: активный низкий уровень (0V при тревоге).
-                - True: активный высокий уровень (V+ при тревоге).
-
-        Заметка:
-            - Для LM75 параметр one_shot игнорируется (нет аппаратной поддержки).
-            - После ONE_SHOT датчик автоматически в SHUTDOWN — вызовите wakeup() для продолжения.
-            - Проверить поддержку: `sensor._one_shot_mode_support`
-
-        Пример:
-           # Непрерывные измерения:
-            sensor.start_measurement()
-
-            # Однократное измерение (MAX30205, TMP117):
-            sensor.start_measurement(one_shot=True)
-            time.sleep_ms(sensor.get_conversion_cycle_time())
-            # ...wait
-            temp = sensor.get_measurement_value()
-
-            # Настройка порогов и режима:
-            sensor.start_measurement(
-                mode=CompMode.COMPARATOR,
-                thresholds=(20.0, 30.0)
-            )
+        Args:
+            one_shot (bool): Игнорируется в этом семействе.
+                             LM75/TMP75 аппаратно не поддерживают One-Shot.
+                             При True выводится предупреждение, запускается Continuous Mode.
         """
-        self.refresh_config_cache()
+        if one_shot:
+            print("One-Shot mode not supported! Starting Continuous Mode!")
 
-        # Настройка порогов (работает у всех)
-        if thresholds is not None:
-            self.set_thresholds(thresholds)
-
-        # Настройка режима OS (работает у всех)
-        if mode is not None:
-            check_value(mode, range(2), f"Неверное значение mode: {mode}. Используйте CompMode.COMPARATOR или CompMode.INTERRUPT!")
-            raw_mode = self._convert_comp_mode(mode)
-            self.set_comp_mode(mode=raw_mode, active_alarm_level=active_alarm_level)
-
-        # Управление режимом измерений
-        if self.is_one_shot_supported() and one_shot:
-            # ONE_SHOT + автоматический SHUTDOWN после измерения
-            self._set_shutdown(value=True)
-            self._set_one_shot(value=True)
-        else:
-            # Continuous mode (выход из SHUTDOWN)
-            # Примечание: ONE_SHOT не нужно сбрасывать явно:
-            # - Это trigger bit (1=запуск, 0=ничего)
-            # - При SHUTDOWN=0 (Continuous mode) бит ONE_SHOT игнорируется
-            # - После измерения бит сбрасывается аппаратно
-            self._set_shutdown(value=False)
-
-        # записываю настройки в регистр
-        cfg_raw = self.get_config_field()
-        self.set_get_config(value=cfg_raw)
+        # Выход из Shutdown -> Continuous Mode
+        self.set_shutdown(value=False)
 
     def is_single_shot_mode(self) -> bool:
         """Возвращает Истина, когда датчик находится в режиме однократных измерений,
@@ -355,29 +354,32 @@ class LM75LikeBase(IBaseSensorEx, ICompInterface, Iterator):
         self.set_reg_val(addr=addr, value=value, bytes_count=2)
         return None
 
-    def get_supported_threshold_range(self) -> tuple[float, float]:
+    def get_supported_thresholds(self) -> tuple[float, float]:
         """Возвращает допустимый диапазон температур (в градусах Цельсия),
-        в пределах которого могут быть заданы пороги срабатывания:
-        - нижний порог (THYST / T_LOW)
-        - верхний порог (TOS / T_HIGH)
+                в пределах которого могут быть заданы пороги срабатывания:
+                - нижний порог (THYST / T_LOW)
+                - верхний порог (TOS / T_HIGH)
 
-        Датчик	    Рабочий диапазон температуры	Рекомендуемый диапазон TOS / THYST      Примечание
-        ---------------------------------------------------------------------------------------------------------------
-        MAX30205	0…+50°C	                        0…+50°C                                 Строгое ограничение
-        LM75	    –55…+125°C	                    –55…+125°C                              Поддерживает весь диапазон
-        TMP117	    –55…+150°C	                    –55…+150°C                              Калибровка по NIST — только от -55 до +50°C. Вне этого диапазона точность видимо хуже
-        TMP119	    –55…+150°C	                    –55…+150°C                              То же, что TMP117
-        MCP9808	    –40…+125°C	                    –40…+125°C                              Вне диапазона — точность не гарантируется
-        TMP102	    –40…+125°C	                    –40…+125°C                              Поддерживает весь диапазон
+                Датчик	    Рабочий диапазон температуры	Рекомендуемый диапазон TOS / THYST      Примечание
+                ---------------------------------------------------------------------------------------------------------------
+                MAX30205	0…+50°C	                        0…+50°C                                 Строгое ограничение
+                LM75	    –55…+125°C	                    –55…+125°C                              Поддерживает весь диапазон
+                TMP117	    –55…+150°C	                    –55…+150°C                              Калибровка по NIST — только от -55 до +50°C. Вне этого диапазона точность видимо хуже
+                TMP119	    –55…+150°C	                    –55…+150°C                              То же, что TMP117
+                MCP9808	    –40…+125°C	                    –40…+125°C                              Вне диапазона — точность не гарантируется
+                TMP102	    –40…+125°C	                    –40…+125°C                              Поддерживает весь диапазон
 
-        Для переопределения в классах - наследниках.
-        """
-        raise NotImplementedError()
+                Для переопределения в классах - наследниках.
+                """
+        return -55.0, 125.0 # уточни по своему даташиту, если нужно
+
+
+
 
 
     # Iterator start
     def __next__(self) -> float | None:
-        if self.is_single_shot_mode() and not self.is_shutdown():
+        if self.is_single_shot_mode() and not self.set_shutdown(value=None):
             return None
         return self.get_measurement_value(0)
     # Iterator stop
@@ -417,15 +419,10 @@ class LM75LikeBase(IBaseSensorEx, ICompInterface, Iterator):
 
     def refresh_config_cache(self) -> int:
         """Читает регистр конфигурации, возвращает его значение, записывает это значение в кэш."""
-        raw_cfg = self.set_get_config(value=None)
+        raw_cfg = self.set_config(value=None)
         # записываю в кэш сырой конфигурации новое значение
         self.set_config_field(value=raw_cfg)
         return raw_cfg
-
-    def is_shutdown(self, read_from_cache: bool = False) -> bool:
-        """Возвращает True, если датчик в режиме малого энергопотребления.
-        Если read_from_cache Истина, то читает из кэша, иначе из датчика (после кеширования)."""
-        return self.get_config_field(self.BF_NAME_SHUTDOWN, read_from_cache=read_from_cache)
 
     def _set_shutdown(self, value: bool):
         """Устанавливает битовое поле 'SHUTDOWN' в value"""
@@ -435,33 +432,34 @@ class LM75LikeBase(IBaseSensorEx, ICompInterface, Iterator):
         """Устанавливает битовое поле 'ONE_SHOT' в value"""
         self.set_config_field(value=value, field_name=self.BF_NAME_ONE_SHOT)
 
-    def shutdown(self, one_shot: bool = False) -> None:
+    def set_shutdown(self, value: bool | None = None, read_from_cache: bool = False) -> bool:
         """
-        Выключает датчик для энергосбережения.
+            Управляет режимом энергосбережения (Shutdown) датчика.
 
-        Аргументы:
-            one_shot (bool):
-                - True: выполнить однократное измерение перед выключением.
-                - False: просто выключить без измерения.
-                - Игнорируется, если датчик не поддерживает ONE_SHOT.
-
-        Заметка:
-            - После shutdown() датчик не измеряет температуру.
-            - Для возобновления измерений вызовите start_measurement...)
-            time.sleep_ms(sensor.get_conversion_cycle_time())
-            temp = sensor.get_measurement_value()
+            Аргументы:
+                value (bool | None):
+                    - None: метод работает как геттер. Возвращает текущее состояние без изменений.
+                    - True: включает режим пониженного энергопотребления (остановка АЦП и осциллятора).
+                    - False: возвращает датчик в активный режим непрерывных измерений.
+                read_from_cache (bool):
+                    - True: читать состояние из локального кэша (метод автоматически обновляет кэш, изменяет только бит SHUTDOWN
+                  и записывает итоговый конфиг обратно в регистр, не затрагивая остальные настройки.
+                - В режиме Shutdown все регистры (пороги, конфигурация) сохраняют значения.
+                - Выход из Shutdown происходит мгновенно, но первое измерение требует
+                  полного времени конвертации (зависит от текущих настроек AVG/CONV).
+                - Соответствует ISensorPowerControl.set_shutdown.
         """
+        if value is None:
+            # Чтение состояния (геттер)
+            return self.get_config_field(self.BF_NAME_SHUTDOWN, read_from_cache=read_from_cache)
+
+        # Запись состояния (сеттер)
         self.refresh_config_cache()
+        self._set_shutdown(value=value)
 
-        self._set_shutdown(value=True)
-
-        # не является обязательным: ONE_SHOT перед выключением
-        if one_shot and self._one_shot_mode_support:
-            self._set_one_shot(value=True)
-
-        # Запись настроек в регистр
-        cfg_raw = self.get_config_field()
-        self.set_get_config(value=cfg_raw)
+        # Синхронная запись обновлённого конфига в регистр
+        self.set_config(value=self.get_config_field())
+        return value
 
     def set_fault_queue(self, faults: int | None = None) -> int:
         """
@@ -478,7 +476,7 @@ class LM75LikeBase(IBaseSensorEx, ICompInterface, Iterator):
             # check_value(faults, range(4), "Неверное значение Fault Queue! Допустимо 0..3.")
             self.refresh_config_cache()
             self.set_config_field(value=faults, field_name=self.BF_NAME_FAULT_QUEUE)
-            self.set_get_config(value=self.get_config_field())
+            self.set_config(value=self.get_config_field())
 
         return self.get_config_field(self.BF_NAME_FAULT_QUEUE, read_from_cache=True)
 
@@ -492,7 +490,7 @@ class LM75LikeBase(IBaseSensorEx, ICompInterface, Iterator):
             self.set_config_field(value=active_alarm_level, field_name=self.BF_NAME_OS_POLARITY)
             # запись настроек
             val = self.get_config_field()
-            self.set_get_config(value=val)
+            self.set_config(value=val)
             #
         return self.get_config_field('COMP_MODE')
 
@@ -512,20 +510,7 @@ class LM75LikeBase(IBaseSensorEx, ICompInterface, Iterator):
         hw_temp_os = self.get_hw_reg_addr(self.ADDR_TOS)
         #
         if thresholds is not None:
-            if not isinstance(thresholds, tuple):
-                raise TypeError("Ожидается экземпляр типа tuple")
             _low, _high = thresholds
-            if _low >= _high:
-                raise ValueError("low должен быть < high")
-
-            # проверка на основе точности
-            accuracy = self.get_typical_accuracy()  # Новый метод!
-            min_window = 3 * accuracy
-            actual_window = _high - _low
-
-            if actual_window < min_window:
-                raise ValueError(f"Окно температур ({actual_window:.3f}°C) слишком узкое! Увеличьте разницу между T_min и T_max!")
-
             # Проверка диапазона thresholds
             self._validate_thresholds(_low, _high)
 
@@ -533,6 +518,7 @@ class LM75LikeBase(IBaseSensorEx, ICompInterface, Iterator):
             tos_raw = self.celsius_to_raw(celsius=_high, threshold=True)
             self.set_get_temp_raw(hw_temp_hyst, value=thyst_raw)
             self.set_get_temp_raw(hw_temp_os, value=tos_raw)
+
         # читаю значения из регистров
         _val = self.set_get_temp_raw(addr=hw_temp_hyst)
         thyst_c = self.raw_to_celsius(raw=_val, threshold=True)
@@ -600,7 +586,7 @@ class LM75(LM75LikeBase):
         Для текущих настроек датчика. При изменении настроек следует заново вызвать этот метод!"""
         return 100
 
-    def get_supported_threshold_range(self) -> tuple[float, float]:
+    def get_supported_thresholds(self) -> tuple[float, float]:
         return -55.0, 125.0
 
 # =========================================================================
@@ -659,7 +645,7 @@ class TMP75(LM75LikeBase):
     def get_conversion_cycle_time(self) -> int:
         return 28 * (1 << self.get_resolution_code())
 
-    def get_supported_threshold_range(self) -> tuple[float, float]:
+    def get_supported_thresholds(self) -> tuple[float, float]:
         return -40.0, 125.0
 
     def set_resolution(self, code: int | None = None) -> int:
@@ -670,8 +656,10 @@ class TMP75(LM75LikeBase):
         check_value(code, range(4), "Неверное значение кода разрешения АЦП температуры!")
         self.refresh_config_cache()
         self.set_config_field(value=code, field_name=LM75LikeBase.BF_NAME_CONV_RESOL)
-        self.set_get_config(value=self.get_config_field())
-        return _offs + code
+        self.set_config(value=self.get_config_field())
+        # после записи обновляю кэш
+        # self.refresh_config_cache()
+        return _offs + self.get_resolution_code()
 
 # =========================================================================
 # пустые наследники для маркетинговых названий
