@@ -38,13 +38,28 @@ Micropython модуль для управления LM75-подобными (LM
 * Некоторые партии TMP75CQ имеют крайне низкий уровень шума (0.0–0.5 LSB). При стабильной температуре показания могут не меняться длительное время — это нормально, а не признак неисправности. Для проверки нагрейте датчик пальцем: значение должно плавно расти.    
 
 # Иерархия классов
+Версия 1.1.0:
 ```
-LM75LikeBase
-├── LM75 (legacy, 9 бит, фикс)
-│   └── LM75AB (наследник, 0.125 °C)  ← только этот есть
-└── TMP75 (modern, 9-12 бит, dynamic)
-    ├── TMP175, TMP275, TMP75A/B/C/D  ← псевдонимы
-    └── LM75A/B/C/D  ← псевдонимы TMP75!
+# ИНТЕРФЕЙСЫ
+# ├── ILM75Sensor          : точность, LSB, raw
+# ├── ICompInterface       : компаратор: пороги, режим ALERT, статус
+# ├── ISensorPowerControl  : питание: set_shutdown(value=None)
+# ├── IBaseSensorEx        : базовый I/O: запуск, статусы, циклы
+# └── Iterator             : поток измерений: __iter__, __next__
+#
+# РЕАЛИЗАЦИИ
+#
+# LM75LikeBase(ILM75Sensor, ICompInterface, ISensorPowerControl, IBaseSensorEx, Iterator)
+# ├── LM75 (legacy, 9 бит, фикс. разрешение)
+# │   └── LM75AB ← единственная реализация в проекте (0.125 °C)
+# │
+# └── TMP75 (современный, 9-12 бит, динамическое разрешение)
+#     ├── TMP175, TMP275, TMP75A/B/C/D  : псевдонимы (alias = TMP75)
+#     └── LM75A/B/C/D                   : псевдонимы (alias = TMP75)
+#
+# TMP11X(ILM75Sensor, ICompInterface, ISensorPowerControl, IBaseSensorEx, Iterator)
+# ├── TMP117 (высокоточный, 16 бит, +/- 0.1 °C, One-Shot)
+# └── TMP119 : псевдоним (alias = TMP11X)
 ```
 
 ## Сопоставление классов и датчиков (lm75mod.py)
