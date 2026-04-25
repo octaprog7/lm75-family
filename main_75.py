@@ -8,8 +8,9 @@ from sensor_pack_2.base_sensor import IBaseSensorEx
 from sensor_pack_2.comp_interface import ICompInterface, CompMode
 from micropython import const
 from machine import I2C, Pin
-from lm75mod import TMP75, LM75A, LM75LikeBase, LM75, ILM75Sensor, ISensorPowerControl
+from lm75mod import TMP75, LM75A, TMP102, LM75LikeBase, LM75, ILM75Sensor, ISensorPowerControl
 from lm75tmp11Xmod import TMP11X
+from adt7410mod import ADT7410
 import time
 
 # Общий интерфейс для всех датчиков семейства.
@@ -441,7 +442,9 @@ def main() -> None:
     print("Searching for sensor...")
     try:
         # === SELECT YOUR CLASS ===
-        ts = TMP11X(adapter=adapter, address=SENSOR_ADDR)      # TMP117/TMP119
+        ts = ADT7410(adapter=adapter, address=SENSOR_ADDR)		 # ADT7410
+        # ts = TMP102(adapter=adapter, address=SENSOR_ADDR)		 # TMP102
+        # ts = TMP11X(adapter=adapter, address=SENSOR_ADDR)      # TMP117/TMP119
         # ts = LM75A(adapter=adapter, address=SENSOR_ADDR)       # LM75A/B/C/D
         # ts = TMP75(adapter=adapter, address=SENSOR_ADDR)       # TMP75/TMP175/...
         # ts = LM75(adapter=adapter, address=SENSOR_ADDR)        # Legacy LM75
