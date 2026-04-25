@@ -1,0 +1,127 @@
+Initializing I2C...
+  [OK] I2C port: ID=1, freq=400kHz
+
+Searching for sensor...
+  [OK] Sensor: ADT7410 @ 0x48
+
+############################################################
+ Test suite for driver ADT7410
+############################################################
+
+------------------------------------------------------------
+ TEST 1: Basic read
+------------------------------------------------------------
+  [OK] Temperature: 26.188 C
+  [OK] Accuracy (typ.): +/- 0.50 C
+  [OK] Resolution (LSB): 0.06250 C
+  [OK] Config (HR): BitFieldsSnapshot(FAULT_QUEUE=0, CT_POLARITY=False, OS_POLARITY=False, COMP_MODE=True, OP_MODE=0, CONV_RESOL=False)
+
+------------------------------------------------------------
+ TEST 2: Comparator thresholds
+------------------------------------------------------------
+  [OK] Current thresholds: 20.000 / 30.000 C
+  -> Setting thresholds: 20.0 / 30.0 C
+  [OK] New thresholds: 20.000 / 30.000 C
+
+------------------------------------------------------------
+ TEST 3: Comparator modes
+------------------------------------------------------------
+  [OK] Current mode: Interrupt
+  -> Switching to Interrupt mode...
+  [WARN] New mode: Comparator
+  -> Switching to Comparator mode...
+  [WARN] Final mode: Interrupt
+
+------------------------------------------------------------
+ TEST 4: Power-saving mode SHUTDOWN
+------------------------------------------------------------
+  [OK] Current state: ACTIVE
+  -> Enabling SHUTDOWN...
+  [OK] After enable: SHUTDOWN
+  -> Exiting SHUTDOWN...
+  [OK] After disable: ACTIVE
+  [OK] Temperature after exit: 26.188 C
+
+------------------------------------------------------------
+ TEST 5: Statistics (30 measurements)
+------------------------------------------------------------
+  -> Interval: 300 ms, LSB: 0.06250 C
+    [ 1] 26.125 C
+    [ 6] 26.188 C
+    [11] 26.125 C
+    [16] 26.625 C
+    [21] 26.500 C
+    [26] 26.375 C
+
+  Results:
+     Min:     26.12500 C
+     Max:     26.75000 C
+     Avg:     26.37708 C
+     Median:  26.37500 C
+     Range:   0.62500 C (10.0 LSB)
+     StdDev:  0.19127 C (3.06 LSB)
+  [OK] Stability: Good (< 4 LSB)
+
+------------------------------------------------------------
+ TEST 6: Iterator (10 values)
+------------------------------------------------------------
+  -> Reading via iterator:
+     [ 1] 26.313 C
+     [ 2] 26.313 C
+     [ 3] 26.313 C
+     [ 4] 26.313 C
+     [ 5] 26.313 C
+     [ 6] 26.250 C
+     [ 7] 26.250 C
+     [ 8] 26.313 C
+     [ 9] 26.313 C
+     [10] 26.250 C
+  [OK] Iterator: Working correctly
+
+------------------------------------------------------------
+ TEST 7: Error handling
+------------------------------------------------------------
+  [OK] Threshold -100C: ValueError caught correctly
+  [OK] Tmin >= Tmax: ValueError caught correctly
+  [OK] Invalid type: Error caught correctly
+  [OK] Validation: All errors handled correctly
+
+------------------------------------------------------------
+ TEST: One-Shot Measurement
+------------------------------------------------------------
+  -> Starting One-Shot conversion...
+  [OK] Temperature: 26.313 C
+  [OK] State after conversion: SHUTDOWN
+
+------------------------------------------------------------
+ TEST 9: Resolution change
+------------------------------------------------------------
+  [OK] Current resolution code: False
+  Note: Requested 12 bits, hardware returned code=True (LSB=0.00781)
+  [WARN] Resolution change: Hardware ignored write
+
+------------------------------------------------------------
+ TEST: Fault Queue
+------------------------------------------------------------
+  [OK] Current Fault Queue code: 0
+  [OK] Config restore: Initial value restored
+  [OK] Fault Queue: All values written/read correctly
+
+############################################################
+ FINAL REPORT
+############################################################
+  [PASSED] Basic read
+  [PASSED] Comparator thresholds
+  [PASSED] Comparator modes
+  [PASSED] SHUTDOWN mode
+  [PASSED] Statistics
+  [PASSED] Iterator
+  [PASSED] Error handling
+  [PASSED] Shutdown with ONE_SHOT
+  [HW LIMIT] Resolution change
+  [PASSED] Fault Queue
+
+Result: 9/10 passed, 1 hardware limited, 0 failed
+OK: All supported functions work correctly. Hardware limits noted.
+
+Final temperature: 26.313 C

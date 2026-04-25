@@ -1,0 +1,130 @@
+============================================================
+ UNIVERSAL TEST FOR LM75/TMP11X FAMILY SENSORS
+============================================================
+Initializing I2C...
+  [OK] I2C port: ID=1, freq=400kHz
+
+Searching for sensor...
+  [OK] Sensor: TMP102 @ 0x49
+
+############################################################
+ Test suite for driver TMP102
+############################################################
+
+------------------------------------------------------------
+ TEST 1: Basic read
+------------------------------------------------------------
+  [OK] Temperature: 25.938 C
+  [OK] Accuracy (typ.): +/- 0.50 C
+  [OK] Resolution (LSB): 0.06250 C
+  [OK] Config (HR): BitFieldsSnapshot(SHUTDOWN=False, COMP_MODE=False, OS_POLARITY=False, FAULT_QUEUE=0, CONV_RESOL=3, ONE_SHOT=False)
+
+------------------------------------------------------------
+ TEST 2: Comparator thresholds
+------------------------------------------------------------
+  [OK] Current thresholds: 20.000 / 30.000 C
+  -> Setting thresholds: 20.0 / 30.0 C
+  [OK] New thresholds: 20.000 / 30.000 C
+
+------------------------------------------------------------
+ TEST 3: Comparator modes
+------------------------------------------------------------
+  [OK] Current mode: Comparator (Therm)
+  -> Switching to Interrupt mode...
+  [OK] New mode: Interrupt
+  -> Switching to Comparator mode...
+  [OK] Final mode: Comparator
+
+------------------------------------------------------------
+ TEST 4: Power-saving mode SHUTDOWN
+------------------------------------------------------------
+  [OK] Current state: ACTIVE
+  -> Enabling SHUTDOWN...
+  [OK] After enable: SHUTDOWN
+  -> Exiting SHUTDOWN...
+  [OK] After disable: ACTIVE
+  [OK] Temperature after exit: 25.938 C
+
+------------------------------------------------------------
+ TEST 5: Statistics (30 measurements)
+------------------------------------------------------------
+  -> Interval: 76 ms, LSB: 0.06250 C
+    [ 1] 25.938 C
+    [ 6] 25.938 C
+    [11] 25.938 C
+    [16] 25.938 C
+    [21] 25.938 C
+    [26] 25.938 C
+
+  Results:
+     Min:     25.93750 C
+     Max:     25.93750 C
+     Avg:     25.93750 C
+     Median:  25.93750 C
+     Range:   0.00000 C (0.0 LSB)
+     StdDev:  0.00000 C (0.00 LSB)
+  [OK] Stability: Excellent (< 1 LSB)
+
+------------------------------------------------------------
+ TEST 6: Iterator (10 values)
+------------------------------------------------------------
+  -> Reading via iterator:
+     [ 1] 25.938 C
+     [ 2] 25.938 C
+     [ 3] 25.938 C
+     [ 4] 25.938 C
+     [ 5] 25.938 C
+     [ 6] 25.938 C
+     [ 7] 25.938 C
+     [ 8] 25.938 C
+     [ 9] 25.938 C
+     [10] 25.938 C
+  [OK] Iterator: Working correctly
+
+------------------------------------------------------------
+ TEST 7: Error handling
+------------------------------------------------------------
+  [OK] Threshold -100C: ValueError caught correctly
+  [OK] Tmin >= Tmax: ValueError caught correctly
+  [OK] Invalid type: Error caught correctly
+  [OK] Validation: All errors handled correctly
+
+------------------------------------------------------------
+ TEST: One-Shot Measurement
+------------------------------------------------------------
+  -> Starting One-Shot conversion...
+One-Shot mode not supported! Starting Continuous Mode!
+  [OK] Temperature: 25.938 C
+  [WARN] State after conversion: ACTIVE
+
+------------------------------------------------------------
+ TEST 9: Resolution change
+------------------------------------------------------------
+  [OK] Current resolution code: 3
+  [OK] Resolution switch: Applied successfully
+
+------------------------------------------------------------
+ TEST: Fault Queue
+------------------------------------------------------------
+  [OK] Current Fault Queue code: 0
+  [OK] Config restore: Initial value restored
+  [OK] Fault Queue: All values written/read correctly
+
+############################################################
+ FINAL REPORT
+############################################################
+  [PASSED] Basic read
+  [PASSED] Comparator thresholds
+  [PASSED] Comparator modes
+  [PASSED] SHUTDOWN mode
+  [PASSED] Statistics
+  [PASSED] Iterator
+  [PASSED] Error handling
+  [PASSED] Shutdown with ONE_SHOT
+  [PASSED] Resolution change
+  [PASSED] Fault Queue
+
+Result: 10/10 passed, 0 hardware limited, 0 failed
+OK: All tests passed!
+
+Final temperature: 25.938 C
