@@ -1,5 +1,26 @@
 # MIT license
 
+from lm75_family_constants import (
+    # Базовые коды и таблица LSB
+    RES_9BIT, RES_10BIT, RES_11BIT, RES_12BIT,
+    RES_LSB_TABLE,
+
+    # LM75 (Legacy, фиксированный)
+    LM75_RESOLUTION_CODE, LM75_LSB,
+    LM75_ACCURACY_TYP, LM75_ACCURACY_MAX,
+    LM75_TEMP_MIN, LM75_TEMP_MAX,
+
+    # LM75A / TMP75 (Настраиваемый)
+    TMP75_ACCURACY_TYP, TMP75_ACCURACY_MAX,
+    TMP75_TEMP_MIN, TMP75_TEMP_MAX,
+
+    # TMP102 (Фиксированный 12 бит)
+    TMP102_RESOLUTION_CODE, TMP102_LSB,
+    TMP102_ACCURACY_TYP, TMP102_ACCURACY_MAX,
+    TMP102_TEMP_MIN, TMP102_TEMP_MAX,
+    resolution_to_lsb
+)
+
 from micropython import const
 from sensor_pack_2.bus_service import I2cAdapter
 from sensor_pack_2.base_sensor import DeviceEx, IBaseSensorEx, Iterator, check_value # , check_value_ex
@@ -371,7 +392,7 @@ class LM75LikeBase(ILM75Sensor, IBaseSensorEx, ICompInterface, ISensorPowerContr
 
                 Для переопределения в классах - наследниках.
                 """
-        return -55.0, 125.0 # уточни по своему даташиту, если нужно
+        return LM75_TEMP_MIN, LM75_TEMP_MAX # уточни по своему даташиту, если нужно
 
 
 
@@ -550,11 +571,11 @@ class LM75(LM75LikeBase):
 
     def get_typical_accuracy(self) -> float:
         """Возвращает типичную погрешность датчика (°C)."""
-        return 2.0
+        return LM75_ACCURACY_TYP
 
     def get_current_lsb(self) -> float:
         """Возвращает текущий 'вес' младшего бита сырого значения температуры в градусах Цельсия."""
-        return 0.5  # 9 бит
+        return LM75_LSB  # 9 бит
 
     def celsius_to_raw(self, celsius: float, threshold: bool = False) -> int:
         """Преобразует температуру (source) из градусов Цельсия в сырое значение, для датчика.
@@ -578,7 +599,7 @@ class LM75(LM75LikeBase):
         #     Младшие 7 бит всегда = 0,
         #     Старшие 9 бит (D15–D7) содержат значение в two’s complement,
         #     LSB = 0.5°C.
-        return 0.5
+        return LM75_LSB
 
     # IBaseSensorEx:
     def get_conversion_cycle_time(self) -> int:
@@ -587,7 +608,7 @@ class LM75(LM75LikeBase):
         return 100
 
     def get_supported_thresholds(self) -> tuple[float, float]:
-        return -55.0, 125.0
+        return LM75_TEMP_MIN, LM75_TEMP_MAX
 
 # =========================================================================
 # Основная реализация (полная логика современных чипов)
@@ -615,26 +636,24 @@ class TMP75(LM75LikeBase):
             raise RuntimeError("Обнаружен устаревший LM75 (без битов R1/R0). Поддерживаются только современные LM75A/B/C/D и TMP75!")
 
     def get_resolution_code(self) -> int:
-        """
-        Возвращает текущий код разрешения АЦП (0..3).
+        """Возвращает текущий код разрешения АЦП (0..3).
         0 = 9 бит, 1 = 10 бит, 2 = 11 бит, 3 = 12 бит.
-        Читаёт напрямую из железа, минуя кэш.
-        """
-        return (self.get_config_field(read_from_cache=False) >> 5) & 0x03
+        Читаёт напрямую из железа, минуя кэш."""
+        return self.get_config_field(self.BF_NAME_CONV_RESOL, read_from_cache=False)
 
     def _get_shift(self) -> int:
         """Возвращает битовый сдвиг для текущего разрешения (7 для 9 бит, 4 для 12 бит)."""
         return 7 - self.get_resolution_code()
 
     def get_current_lsb(self) -> float:
-        return 0.5 * 2 ** -self.get_resolution_code()
+        return resolution_to_lsb(self.get_resolution_code())
 
     def get_threshold_lsb(self) -> float:
         return self.get_current_lsb()
 
     def get_typical_accuracy(self) -> float:
         """Возвращает типичную погрешность датчика во всём рабочем диапазоне."""
-        return 1.0  # согласно Table 6.5 TMP75
+        return TMP75_ACCURACY_TYP  # согласно Table 6.5 TMP75
 
     def celsius_to_raw(self, celsius: float, threshold: bool = False) -> int:
         return int(round(celsius / self.get_current_lsb())) << self._get_shift()
@@ -646,7 +665,7 @@ class TMP75(LM75LikeBase):
         return 28 * (1 << self.get_resolution_code())
 
     def get_supported_thresholds(self) -> tuple[float, float]:
-        return -40.0, 125.0
+        return TMP75_TEMP_MIN, TMP75_TEMP_MAX
 
     def set_resolution(self, code: int | None = None) -> int:
         """Устанавливает или возвращает разрешение АЦП (0=9бит, 1=10, 2=11, 3=12)."""
@@ -695,26 +714,29 @@ class TMP102(TMP75):
         self._one_shot_mode_support = True
 
     def get_typical_accuracy(self) -> float:
-        return 0.5  # +/- 0.5 °C согласно даташиту
+        return TMP102_ACCURACY_TYP  # +/- 0.5 °C согласно даташиту
 
     def get_current_lsb(self) -> float:
-        return 0.0625  # разрешение 12-бит
+        return TMP102_LSB  # разрешение 12-бит
 
     def get_threshold_lsb(self) -> float:
         return self.get_current_lsb()  # пороги температуры в том же формате
+
+    def get_supported_thresholds(self) -> tuple[float, float]:
+        return TMP102_TEMP_MIN, TMP102_TEMP_MAX
 
     def get_conversion_cycle_time(self) -> int:
         return 26  # Фиксированное время конвертации (~26 мс)
 
     def get_resolution_code(self) -> int:
         """TMP102 всегда работает в 12-битном режиме."""
-        return 3  # Код 12 бит
+        return RES_12BIT  # Код 12 бит
 
     def set_resolution(self, code: int | None = None) -> int:
         """TMP102 не поддерживает изменение разрешения."""
-        if code is not None:
-            raise NotImplementedError("TMP102 имеет фиксированное разрешение 12 бит")
-        return self.get_resolution_code()
+        # Игнорирую запрос на изменение (датчик не поддерживает переключение)
+        # Возвращаю всегда 3 (12 бит), что соответствует даташиту TMP102
+        return RES_12BIT
 
 
 class PerformanceMode:
