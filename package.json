@@ -1,6 +1,6 @@
 {
   "name": "lm75-family",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "urls": [
     [
       "lm75mod.py",
