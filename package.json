@@ -7,6 +7,14 @@
       "github:octaprog7/lm75-family/lm75mod.py"
     ],
     [
+      "adt7410mod.py",
+      "github:octaprog7/lm75-family/adt7410mod.py"
+    ],
+    [
+      "lm75_family_constants.py",
+      "github:octaprog7/lm75-family/lm75_family_constants.py"
+    ],
+    [
       "lm75tmp11Xmod.py",
       "github:octaprog7/lm75-family/lm75tmp11Xmod.py"
     ],
